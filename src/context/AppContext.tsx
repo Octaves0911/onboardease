@@ -21,17 +21,35 @@ export interface Employee {
   resumeContent?: string   // simulated extracted text
 }
 
+export interface SubTask {
+  id: string
+  title: string
+  status: 'pending' | 'done'
+}
+
+export interface SupportingLink {
+  label: string
+  url: string
+}
+
 export interface Task {
   id: string
   title: string
   description: string
   category: string
   estimatedTime: string
+  priority?: 'low' | 'medium' | 'high'
   assignedTo: string          // employee id
   assignedBy: 'admin' | 'hr' | 'mentor'
   assignedByName: string
   status: 'pending' | 'in-progress' | 'done'
   createdAt: string
+  subtasks?: SubTask[]
+  supportingDocs?: string[]        // document ids
+  supportingLinks?: SupportingLink[]
+  requiresInput?: boolean
+  inputPrompt?: string
+  inputValue?: string
 }
 
 export interface Document {
@@ -44,6 +62,7 @@ export interface Document {
   taskCount?: number
   date: string
   content: string   // simulated extracted content for AI
+  fileData?: string // base64 data URL of the actual uploaded file (not persisted to localStorage)
 }
 
 export interface MentorUser {
@@ -71,17 +90,22 @@ type Action =
   | { type: 'ADD_TASK'; payload: Task }
   | { type: 'ADD_TASKS'; payload: Task[] }
   | { type: 'UPDATE_TASK_STATUS'; payload: { id: string; status: Task['status'] } }
+  | { type: 'UPDATE_SUBTASK_STATUS'; payload: { taskId: string; subtaskId: string; status: SubTask['status'] } }
+  | { type: 'UPDATE_TASK_INPUT'; payload: { taskId: string; inputValue: string } }
   | { type: 'ADD_DOCUMENT'; payload: Document }
   | { type: 'UPDATE_EMPLOYEE_RESUME'; payload: { id: string; resumeFileName: string; resumeContent: string } }
+  | { type: 'REMOVE_EMPLOYEE'; payload: { id: string } }
+  | { type: 'ADD_MENTOR';    payload: MentorUser }
+  | { type: 'REMOVE_MENTOR'; payload: { id: string } }
 
 // ─── Initial Data ─────────────────────────────────────────────────────────────
 
-const COLORS = ['#8B4513', '#A0724A', '#C49A6C', '#D2B48C', '#7A3C10', '#6B3410']
+const COLORS = ['#2B85DC', '#4EA0EB', '#7DBCF5', '#B3D8FF', '#1F6EC4', '#1558A8']
 
 export const initialMentors: MentorUser[] = [
-  { id: 'mentor-1', name: 'Sarah Chen', specialty: 'Engineering & Architecture', department: 'Engineering', initials: 'SC', color: '#8B4513' },
-  { id: 'mentor-2', name: 'Mike Johnson', specialty: 'Sales & Business Development', department: 'Sales', initials: 'MJ', color: '#A0724A' },
-  { id: 'mentor-3', name: 'Priya Patel', specialty: 'Design & Product', department: 'Product', initials: 'PP', color: '#C49A6C' },
+  { id: 'mentor-1', name: 'Sarah Chen', specialty: 'Engineering & Architecture', department: 'Engineering', initials: 'SC', color: '#2B85DC' },
+  { id: 'mentor-2', name: 'Mike Johnson', specialty: 'Sales & Business Development', department: 'Sales', initials: 'MJ', color: '#4EA0EB' },
+  { id: 'mentor-3', name: 'Priya Patel', specialty: 'Design & Product', department: 'Product', initials: 'PP', color: '#7DBCF5' },
 ]
 
 const initialEmployees: Employee[] = [
@@ -124,7 +148,9 @@ function saveState(state: AppState) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       employees: state.employees,
       tasks: state.tasks,
-      documents: state.documents,
+      mentors:  state.mentors,
+      // Strip fileData (binary) before persisting to avoid bloating localStorage
+      documents: state.documents.map(({ fileData: _fd, ...d }) => d),
     }))
   } catch {}
 }
@@ -149,6 +175,39 @@ function reducer(state: AppState, action: Action): AppState {
         tasks: state.tasks.map(t =>
           t.id === action.payload.id ? { ...t, status: action.payload.status } : t
         )
+      }
+    case 'UPDATE_SUBTASK_STATUS':
+      return {
+        ...state,
+        tasks: state.tasks.map(t =>
+          t.id === action.payload.taskId
+            ? { ...t, subtasks: (t.subtasks ?? []).map(s => s.id === action.payload.subtaskId ? { ...s, status: action.payload.status } : s) }
+            : t
+        )
+      }
+    case 'UPDATE_TASK_INPUT':
+      return {
+        ...state,
+        tasks: state.tasks.map(t =>
+          t.id === action.payload.taskId ? { ...t, inputValue: action.payload.inputValue } : t
+        )
+      }
+    case 'REMOVE_EMPLOYEE':
+      return {
+        ...state,
+        employees: state.employees.filter(e => e.id !== action.payload.id),
+        tasks:     state.tasks.filter(t => t.assignedTo !== action.payload.id),
+      }
+    case 'ADD_MENTOR':
+      return { ...state, mentors: [...state.mentors, action.payload] }
+    case 'REMOVE_MENTOR':
+      return {
+        ...state,
+        mentors:   state.mentors.filter(m => m.id !== action.payload.id),
+        // Unassign employees whose mentor was removed
+        employees: state.employees.map(e =>
+          e.mentorId === action.payload.id ? { ...e, mentorId: null } : e
+        ),
       }
     case 'ADD_DOCUMENT':
       return { ...state, documents: [action.payload, ...state.documents] }
@@ -178,7 +237,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const initialState: AppState = {
     currentRole: null,
     currentUserId: null,
-    mentors: initialMentors,
+    mentors: persisted.mentors ?? initialMentors,
     employees: persisted.employees ?? initialEmployees,
     tasks: persisted.tasks ?? initialTasks,
     documents: persisted.documents ?? initialDocuments,

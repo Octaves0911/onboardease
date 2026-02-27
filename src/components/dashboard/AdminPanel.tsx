@@ -1,15 +1,17 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import {
   Users, TrendingUp, AlertTriangle, CheckCircle, Plus,
-  Search, BarChart3, Bot, FileText,
+  Search, BarChart3, Bot, FileText, Trash2, Eye,
   Sparkles, BookOpen, Settings, Shield, Upload,
   Plug, Activity, Clock, Zap, GitBranch, Slack, Globe, Lock, ClipboardList
 } from 'lucide-react'
 import { useApp, initialMentors } from '../../context/AppContext'
 import AddEmployeeModal from '../modals/AddEmployeeModal'
 import EmployeeDetailModal from '../modals/EmployeeDetailModal'
+import PDFViewerModal from '../modals/PDFViewerModal'
+import AddMentorModal from '../modals/AddMentorModal'
 import AIDocumentChat from '../chat/AIDocumentChat'
-import type { Employee } from '../../context/AppContext'
+import type { Employee, Document, MentorUser } from '../../context/AppContext'
 
 interface Props { activeSection?: string }
 
@@ -20,6 +22,33 @@ export default function AdminPanel({ activeSection = 'overview' }: Props) {
   const [showAIChat,       setShowAIChat]       = useState(false)
   const [selectedDoc,      setSelectedDoc]      = useState<string | undefined>()
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
+  const [confirmRemove,    setConfirmRemove]    = useState<Employee | null>(null)
+  const [viewingDoc,       setViewingDoc]       = useState<Document | null>(null)
+  const [showAddMentor,    setShowAddMentor]    = useState(false)
+  const [confirmRemoveMentor, setConfirmRemoveMentor] = useState<MentorUser | null>(null)
+  const docUploadRef = useRef<HTMLInputElement>(null)
+
+  const handleDirectUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      const newDoc: Document = {
+        id: `doc-${Date.now()}`,
+        name: file.name.replace(/\.[^/.]+$/, ''),
+        type: file.name.split('.').pop()?.toUpperCase() ?? 'PDF',
+        size: `${(file.size / 1024 / 1024).toFixed(1)} MB`,
+        status: 'processed',
+        uploadedBy: 'admin',
+        date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        content: `Document: ${file.name}. This document contains important company information, policies, procedures, and guidelines for new employees.`,
+        fileData: reader.result as string,
+      }
+      dispatch({ type: 'ADD_DOCUMENT', payload: newDoc })
+    }
+    reader.readAsDataURL(file)
+    e.target.value = ''
+  }
 
   const filtered = state.employees.filter(e =>
     e.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -29,14 +58,15 @@ export default function AdminPanel({ activeSection = 'overview' }: Props) {
   const atRisk     = state.employees.filter(e => e.risk === 'high').length
   const onboarding = state.employees.filter(e => e.status === 'onboarding').length
 
-  // Compute progress dynamically from task completion
-  const getProgress = (empId: string) => {
-    const t = state.tasks.filter(t => t.assignedTo === empId)
-    return t.length > 0 ? Math.round((t.filter(t => t.status === 'done').length / t.length) * 100) : 0
+  // Compute progress dynamically from task completion; fall back to emp.progress if no tasks assigned
+  const getProgress = (emp: Employee) => {
+    const t = state.tasks.filter(t => t.assignedTo === emp.id)
+    return t.length > 0 ? Math.round((t.filter(t => t.status === 'done').length / t.length) * 100) : emp.progress
   }
+  const hasTasks = (empId: string) => state.tasks.some(t => t.assignedTo === empId)
 
   const avgProg    = state.employees.length
-    ? Math.round(state.employees.reduce((a, e) => a + getProgress(e.id), 0) / state.employees.length)
+    ? Math.round(state.employees.reduce((a, e) => a + getProgress(e), 0) / state.employees.length)
     : 0
 
   const getMentor = (id: string | null) =>
@@ -46,8 +76,8 @@ export default function AdminPanel({ activeSection = 'overview' }: Props) {
     <div className="min-h-screen" style={{ background: '#F0F7FF' }}>
       <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
 
-        {/* Stats — always visible */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Stats — hidden on Mentors tab */}
+        {activeSection !== 'mentors' && <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[
             { icon: <Users size={20} />,        label: 'Total Employees', value: state.employees.length, sub: `${onboarding} onboarding`,  color: 'bg-blue-50 text-blue-600'   },
             { icon: <TrendingUp size={20} />,    label: 'Avg Progress',   value: `${avgProg}%`,          sub: 'across all hires',           color: 'bg-green-50 text-green-600' },
@@ -63,7 +93,7 @@ export default function AdminPanel({ activeSection = 'overview' }: Props) {
               </div>
             </div>
           ))}
-        </div>
+        </div>}
 
         {/* ═══ OVERVIEW ═══ */}
         {activeSection === 'overview' && (
@@ -76,19 +106,33 @@ export default function AdminPanel({ activeSection = 'overview' }: Props) {
                 </div>
                 <div className="space-y-4">
                   {state.employees.filter(e => e.status === 'onboarding').map(emp => {
-                    const prog = getProgress(emp.id)
+                    const prog     = getProgress(emp)
+                    const hasTask  = hasTasks(emp.id)
                     return (
                       <button key={emp.id} onClick={() => setSelectedEmployee(emp)} className="w-full flex items-center gap-4 text-left hover:bg-brown-50 -mx-2 px-2 py-1 rounded-lg transition-colors">
                         <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0" style={{ background: emp.color }}>{emp.initials}</div>
                         <div className="flex-1 min-w-0">
                           <div className="flex justify-between mb-1">
                             <span className="text-sm font-semibold text-brown-800 truncate">{emp.name}</span>
-                            <span className="text-xs text-brown-500 ml-2 flex-shrink-0">Day {emp.day}/{emp.totalDays} · {prog}%</span>
+                            {hasTask
+                              ? <span className="text-xs text-brown-500 ml-2 flex-shrink-0">Day {emp.day}/{emp.totalDays} · {prog}%</span>
+                              : <span className="text-xs text-orange-500 ml-2 flex-shrink-0 font-medium">No task assigned</span>
+                            }
                           </div>
-                          <div className="progress-bar"><div className={`progress-fill ${emp.risk === 'high' ? '!bg-red-400' : ''}`} style={{ width: `${prog}%` }} /></div>
+                          {hasTask
+                            ? <div className="progress-bar"><div className={`progress-fill ${emp.risk === 'high' ? '!bg-red-400' : ''}`} style={{ width: `${prog}%` }} /></div>
+                            : <div className="h-2 rounded-full bg-orange-100 border border-dashed border-orange-300" />
+                          }
                           <p className="text-xs text-brown-400 mt-0.5">Mentor: {getMentor(emp.mentorId)}</p>
                         </div>
                         {emp.risk === 'high' && <AlertTriangle size={16} className="text-red-500 flex-shrink-0" />}
+                        <button
+                          onClick={e => { e.stopPropagation(); setConfirmRemove(emp) }}
+                          className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors flex-shrink-0"
+                          title="Remove employee"
+                        >
+                          <Trash2 size={14} />
+                        </button>
                       </button>
                     )
                   })}
@@ -128,7 +172,7 @@ export default function AdminPanel({ activeSection = 'overview' }: Props) {
                   <button onClick={() => setShowAddEmployee(true)} className="w-full flex items-center gap-3 p-3 rounded-xl bg-brown-50 hover:bg-brown-100 border border-brown-200 transition-colors text-left">
                     <Plus size={16} className="text-brown-600 flex-shrink-0" /><span className="text-sm font-semibold text-brown-800">Add New Employee</span>
                   </button>
-                  <button onClick={() => setShowAIChat(true)} className="w-full flex items-center gap-3 p-3 rounded-xl bg-brown-50 hover:bg-brown-100 border border-brown-200 transition-colors text-left">
+                  <button onClick={() => docUploadRef.current?.click()} className="w-full flex items-center gap-3 p-3 rounded-xl bg-brown-50 hover:bg-brown-100 border border-brown-200 transition-colors text-left">
                     <Upload size={16} className="text-brown-600 flex-shrink-0" /><span className="text-sm font-semibold text-brown-800">Upload Documents</span>
                   </button>
                 </div>
@@ -157,17 +201,32 @@ export default function AdminPanel({ activeSection = 'overview' }: Props) {
                     {filtered.map(emp => {
                       const myTasks = state.tasks.filter(t => t.assignedTo === emp.id)
                       const done    = myTasks.filter(t => t.status === 'done').length
-                      const prog    = getProgress(emp.id)
+                      const prog    = getProgress(emp)
+                      const hasTask = hasTasks(emp.id)
                       return (
                         <tr key={emp.id} onClick={() => setSelectedEmployee(emp)} className="hover:bg-brown-50/60 transition-colors cursor-pointer">
                           <td className="px-4 py-4"><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold" style={{ background: emp.color }}>{emp.initials}</div><div><span className="font-semibold text-brown-900 text-sm">{emp.name}</span><p className="text-xs text-brown-400">{emp.email}</p></div></div></td>
                           <td className="px-4 py-4"><p className="text-sm text-brown-800 font-medium">{emp.role}</p><p className="text-xs text-brown-400">{emp.team}</p></td>
                           <td className="px-4 py-4 text-sm text-brown-600 whitespace-nowrap">{getMentor(emp.mentorId)}</td>
-                          <td className="px-4 py-4"><div className="flex items-center gap-2"><div className="w-20 progress-bar"><div className={`progress-fill ${emp.risk === 'high' ? '!bg-red-400' : ''}`} style={{ width: `${prog}%` }} /></div><span className="text-xs text-brown-500 font-medium">{prog}%</span></div></td>
+                          <td className="px-4 py-4">
+                            {hasTask
+                              ? <div className="flex items-center gap-2"><div className="w-20 progress-bar"><div className={`progress-fill ${emp.risk === 'high' ? '!bg-red-400' : ''}`} style={{ width: `${prog}%` }} /></div><span className="text-xs text-brown-500 font-medium">{prog}%</span></div>
+                              : <span className="text-xs font-semibold text-orange-500 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded-full whitespace-nowrap">No task assigned</span>
+                            }
+                          </td>
                           <td className="px-4 py-4 text-sm text-brown-600 whitespace-nowrap">{done}/{myTasks.length} done</td>
                           <td className="px-4 py-4">{emp.status === 'completed' ? <span className="badge-green">Completed</span> : <span className="badge-orange">Onboarding</span>}</td>
                           <td className="px-4 py-4">{emp.resumeFileName ? <span className="badge-green flex items-center gap-1 w-fit"><CheckCircle size={11} />{emp.resumeFileName.slice(0, 12)}…</span> : <span className="text-xs text-brown-400">—</span>}</td>
                           <td className="px-4 py-4 text-xs text-brown-400 underline">View →</td>
+                          <td className="px-4 py-4">
+                            <button
+                              onClick={e => { e.stopPropagation(); setConfirmRemove(emp) }}
+                              className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+                              title="Remove employee"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </td>
                         </tr>
                       )
                     })}
@@ -182,11 +241,32 @@ export default function AdminPanel({ activeSection = 'overview' }: Props) {
         {/* ═══ DOCUMENTS ═══ */}
         {activeSection === 'docs' && (
           <div className="space-y-5">
-            <div className="border-2 border-dashed border-brown-200 rounded-2xl p-10 text-center hover:border-brown-400 transition-all cursor-pointer" onClick={() => setShowAIChat(true)}>
+            {/* Hidden file input */}
+            <input
+              ref={docUploadRef}
+              type="file"
+              className="hidden"
+              accept=".pdf,.doc,.docx,.txt,.ppt,.pptx,.xls,.xlsx"
+              onChange={handleDirectUpload}
+            />
+            <div className="border-2 border-dashed border-brown-200 rounded-2xl p-10 text-center hover:border-brown-400 transition-all">
               <div className="w-16 h-16 bg-brown-100 rounded-2xl flex items-center justify-center mx-auto mb-4"><Upload size={28} className="text-brown-500" /></div>
-              <h3 className="font-bold text-brown-900 text-lg mb-2">Upload & Generate Tasks with AI</h3>
-              <p className="text-brown-500 text-sm mb-4">Upload HR documents — our AI reads them and creates onboarding task lists in seconds</p>
-              <button className="btn-primary text-sm py-2.5 px-6 inline-flex items-center gap-2"><Sparkles size={16} />Open AI Document Chat</button>
+              <h3 className="font-bold text-brown-900 text-lg mb-2">Upload Documents</h3>
+              <p className="text-brown-500 text-sm mb-5">Upload HR policies, guides, playbooks — then use AI to generate onboarding tasks from them</p>
+              <div className="flex items-center justify-center gap-3 flex-wrap">
+                <button
+                  onClick={() => docUploadRef.current?.click()}
+                  className="btn-primary text-sm py-2.5 px-6 inline-flex items-center gap-2"
+                >
+                  <Upload size={16} /> Upload Document
+                </button>
+                <button
+                  onClick={() => { setSelectedDoc(undefined); setShowAIChat(true) }}
+                  className="btn-secondary text-sm py-2.5 px-6 inline-flex items-center gap-2"
+                >
+                  <Bot size={16} /> Generate Tasks with AI
+                </button>
+              </div>
             </div>
             <div className="card p-0 overflow-hidden">
               <div className="px-6 py-4 border-b border-brown-100 flex justify-between items-center"><h3 className="font-bold text-brown-900">Uploaded Documents</h3><span className="badge-brown">{state.documents.length} files</span></div>
@@ -195,8 +275,9 @@ export default function AdminPanel({ activeSection = 'overview' }: Props) {
                   <div key={doc.id} className="flex items-center gap-4 px-6 py-4 hover:bg-brown-50/50 transition-colors">
                     <div className="w-10 h-10 bg-red-50 rounded-xl flex items-center justify-center border border-red-200 flex-shrink-0"><BookOpen size={18} className="text-red-500" /></div>
                     <div className="flex-1 min-w-0"><p className="font-semibold text-brown-900 text-sm truncate">{doc.name}</p><p className="text-xs text-brown-400">{doc.type} · {doc.size} · {doc.date}</p></div>
-                    <div className="flex items-center gap-3 flex-shrink-0">
+                    <div className="flex items-center gap-2 flex-shrink-0">
                       {doc.status === 'processed' ? <span className="badge-green flex items-center gap-1"><CheckCircle size={11} />Processed</span> : <span className="badge-orange">Processing…</span>}
+                      <button onClick={() => setViewingDoc(doc)} className="text-xs font-semibold text-brown-600 border border-brown-200 bg-white px-2.5 py-1.5 rounded-lg hover:bg-brown-50 transition-colors flex items-center gap-1"><Eye size={12} />View</button>
                       <button onClick={() => { setSelectedDoc(doc.id); setShowAIChat(true) }} className="text-xs font-semibold text-brown-600 border border-brown-200 bg-white px-2.5 py-1.5 rounded-lg hover:bg-brown-50 transition-colors flex items-center gap-1"><Bot size={12} />Generate Tasks</button>
                     </div>
                   </div>
@@ -249,7 +330,7 @@ export default function AdminPanel({ activeSection = 'overview' }: Props) {
                 <div className="space-y-4">
                   {['Engineering', 'Product', 'Sales', 'Design'].map((team, i) => {
                     const emps = state.employees.filter(e => e.team === team)
-                    const avg  = emps.length ? Math.round(emps.reduce((a, e) => a + getProgress(e.id), 0) / emps.length) : [60,80,45,90][i]
+                    const avg  = emps.length ? Math.round(emps.reduce((a, e) => a + getProgress(e), 0) / emps.length) : ([60,80,45,90] as number[])[i]
                     return (
                       <div key={team}>
                         <div className="flex justify-between mb-1.5"><span className="text-sm font-medium text-brown-700">{team}</span><span className="text-xs text-brown-500">{avg}%</span></div>
@@ -276,8 +357,159 @@ export default function AdminPanel({ activeSection = 'overview' }: Props) {
                 </div>
               </div>
             </div>
+
+            {/* Unassigned employees callout */}
+            {(() => {
+              const unassigned = state.employees.filter(e => !hasTasks(e.id))
+              if (unassigned.length === 0) return null
+              return (
+                <div className="card border-l-4 border-orange-400 bg-orange-50 p-4">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle size={18} className="text-orange-500 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-sm font-bold text-orange-800 mb-2">Employees with no tasks assigned ({unassigned.length})</p>
+                      <div className="flex flex-wrap gap-2">
+                        {unassigned.map(emp => (
+                          <div key={emp.id} className="flex items-center gap-2 bg-white border border-orange-200 rounded-lg px-3 py-1.5">
+                            <div className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0" style={{ background: emp.color }}>{emp.initials}</div>
+                            <div>
+                              <span className="text-xs font-semibold text-brown-800">{emp.name}</span>
+                              <span className="text-xs text-orange-500 ml-1.5 font-medium">· No task assigned</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )
+            })()}
           </div>
         )}
+
+        {/* ═══ MENTORS ═══ */}
+        {activeSection === 'mentors' && (() => {
+          const mentors = state.mentors
+          const getMentees = (mId: string) => state.employees.filter(e => e.mentorId === mId)
+          const getMenteeAvgProgress = (mId: string) => {
+            const mentees = getMentees(mId)
+            if (!mentees.length) return 0
+            return Math.round(mentees.reduce((a, e) => a + getProgress(e), 0) / mentees.length)
+          }
+          const totalMentees = mentors.reduce((a, m) => a + getMentees(m.id).length, 0)
+
+          return (
+            <div className="space-y-6">
+              {/* Stats */}
+              <div className="grid sm:grid-cols-2 gap-4 max-w-sm">
+                {[
+                  { label: 'Total Mentors', value: mentors.length, icon: <Users size={20} />,      color: 'bg-blue-50 text-blue-600'   },
+                  { label: 'Total Mentees', value: totalMentees,   icon: <TrendingUp size={20} />, color: 'bg-green-50 text-green-600' },
+                ].map(s => (
+                  <div key={s.label} className="card flex items-center gap-4">
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${s.color}`}>{s.icon}</div>
+                    <div>
+                      <p className="text-xs text-brown-500 font-medium">{s.label}</p>
+                      <p className="font-bold text-brown-900 text-xl leading-tight">{s.value}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Header + Add button */}
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-brown-900 flex items-center gap-2"><Users size={18} />All Mentors <span className="text-xs font-medium bg-brown-100 text-brown-600 px-2 py-0.5 rounded-full">{mentors.length}</span></h3>
+                <button onClick={() => setShowAddMentor(true)} className="btn-primary text-sm py-2 px-4 flex items-center gap-2"><Plus size={14} />Add Mentor</button>
+              </div>
+
+              {/* Mentor cards */}
+              {mentors.length === 0 ? (
+                <div className="text-center py-14 bg-white rounded-2xl border border-dashed border-brown-200">
+                  <Users size={36} className="mx-auto mb-3 text-brown-300" />
+                  <p className="text-brown-500 font-medium mb-2">No mentors added yet</p>
+                  <button onClick={() => setShowAddMentor(true)} className="btn-primary text-sm py-2 px-5 inline-flex items-center gap-2"><Plus size={14} />Add First Mentor</button>
+                </div>
+              ) : (
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {mentors.map(mentor => {
+                    const mentees   = getMentees(mentor.id)
+                    const avgPct    = getMenteeAvgProgress(mentor.id)
+                    const atRiskCt  = mentees.filter(e => e.risk === 'high').length
+                    return (
+                      <div key={mentor.id} className="card flex flex-col gap-4">
+                        {/* Avatar + info */}
+                        <div className="flex items-start gap-3">
+                          <div className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg flex-shrink-0 shadow-sm" style={{ background: mentor.color }}>
+                            {mentor.initials}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-bold text-brown-900 text-sm truncate">{mentor.name}</p>
+                            <p className="text-xs text-brown-500 truncate">{mentor.specialty}</p>
+                            <span className="inline-block mt-1 text-xs font-semibold bg-brown-100 text-brown-600 px-2 py-0.5 rounded-full">{mentor.department}</span>
+                          </div>
+                          <button
+                            onClick={() => setConfirmRemoveMentor(mentor)}
+                            className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors flex-shrink-0"
+                            title="Remove mentor"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+
+                        {/* Mentees stats */}
+                        <div className="grid grid-cols-3 gap-2 text-center">
+                          <div className="bg-brown-50 rounded-lg p-2">
+                            <p className="font-bold text-brown-900">{mentees.length}</p>
+                            <p className="text-xs text-brown-500">Mentees</p>
+                          </div>
+                          <div className="bg-green-50 rounded-lg p-2">
+                            <p className="font-bold text-green-700">{mentees.filter(e => e.status === 'completed').length}</p>
+                            <p className="text-xs text-brown-500">Completed</p>
+                          </div>
+                          <div className={`rounded-lg p-2 ${atRiskCt > 0 ? 'bg-red-50' : 'bg-green-50'}`}>
+                            <p className={`font-bold ${atRiskCt > 0 ? 'text-red-600' : 'text-green-700'}`}>{atRiskCt}</p>
+                            <p className="text-xs text-brown-500">At Risk</p>
+                          </div>
+                        </div>
+
+                        {/* Avg progress bar */}
+                        <div>
+                          <div className="flex justify-between mb-1.5">
+                            <span className="text-xs font-medium text-brown-600">Avg. Mentee Progress</span>
+                            <span className="text-xs font-bold text-brown-800">{avgPct}%</span>
+                          </div>
+                          <div className="progress-bar">
+                            <div className="progress-fill" style={{ width: `${avgPct}%` }} />
+                          </div>
+                        </div>
+
+                        {/* Mentee list */}
+                        {mentees.length > 0 && (
+                          <div className="border-t border-brown-100 pt-3">
+                            <p className="text-xs font-semibold text-brown-500 mb-2">Current Mentees</p>
+                            <div className="space-y-1.5">
+                              {mentees.map(e => (
+                                <div key={e.id} className="flex items-center gap-2">
+                                  <div className="w-5 h-5 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0" style={{ background: e.color }}>{e.initials}</div>
+                                  <span className="text-xs text-brown-700 flex-1 truncate">{e.name}</span>
+                                  <span className={`text-xs font-semibold ${e.risk === 'high' ? 'text-red-500' : 'text-green-600'}`}>{getProgress(e)}%</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {mentees.length === 0 && (
+                          <p className="text-xs text-brown-400 text-center py-1">No mentees assigned yet</p>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )
+        })()}
 
         {/* ═══ INTEGRATIONS ═══ */}
         {activeSection === 'integrations' && (
@@ -366,7 +598,73 @@ export default function AdminPanel({ activeSection = 'overview' }: Props) {
       </div>
 
       {showAddEmployee   && <AddEmployeeModal onClose={() => setShowAddEmployee(false)} />}
+      {showAddMentor     && <AddMentorModal   onClose={() => setShowAddMentor(false)} />}
       {selectedEmployee  && <EmployeeDetailModal employee={selectedEmployee} onClose={() => setSelectedEmployee(null)} />}
+      {viewingDoc        && <PDFViewerModal doc={viewingDoc} onClose={() => setViewingDoc(null)} />}
+
+      {/* ── Remove Mentor Confirmation ── */}
+      {confirmRemoveMentor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4" onClick={() => setConfirmRemoveMentor(null)}>
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center flex-shrink-0"><Trash2 size={18} className="text-red-600" /></div>
+              <div><h3 className="font-bold text-brown-900">Remove Mentor</h3><p className="text-xs text-brown-500">This action cannot be undone</p></div>
+            </div>
+            <p className="text-sm text-brown-700 mb-5">
+              Remove <strong>{confirmRemoveMentor.name}</strong> as a mentor? Any employees assigned to them will be unassigned.
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setConfirmRemoveMentor(null)} className="flex-1 btn-secondary py-2.5 text-sm">Cancel</button>
+              <button
+                onClick={() => { dispatch({ type: 'REMOVE_MENTOR', payload: { id: confirmRemoveMentor.id } }); setConfirmRemoveMentor(null) }}
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 px-4 rounded-xl transition-colors text-sm flex items-center justify-center gap-2"
+              >
+                <Trash2 size={14} /> Remove
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Remove Employee Confirmation ── */}
+      {confirmRemove && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4" onClick={() => setConfirmRemove(null)}>
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                <Trash2 size={18} className="text-red-600" />
+              </div>
+              <div>
+                <h3 className="font-bold text-brown-900">Remove Employee</h3>
+                <p className="text-xs text-brown-500">This action cannot be undone</p>
+              </div>
+            </div>
+            <p className="text-sm text-brown-700 mb-5">
+              Are you sure you want to remove <strong>{confirmRemove.name}</strong> ({confirmRemove.role}) from the organization? All their assigned tasks will also be deleted.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirmRemove(null)}
+                className="flex-1 btn-secondary py-2.5 text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  dispatch({ type: 'REMOVE_EMPLOYEE', payload: { id: confirmRemove.id } })
+                  setConfirmRemove(null)
+                  if (selectedEmployee?.id === confirmRemove.id) setSelectedEmployee(null)
+                }}
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 px-4 rounded-xl transition-colors text-sm flex items-center justify-center gap-2"
+              >
+                <Trash2 size={14} /> Remove
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {showAIChat && (
         <AIDocumentChat
           onClose={() => { setShowAIChat(false); setSelectedDoc(undefined) }}

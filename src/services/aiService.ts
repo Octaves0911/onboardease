@@ -312,6 +312,88 @@ export async function generalChat(userMessage: string, context: string): Promise
   return 'I\'m your AI onboarding assistant. I can help you create task lists from documents, analyze resumes to personalize onboarding plans, and answer questions about your team\'s progress. What would you like to do?'
 }
 
+// ─── Suggest tasks for a specific employee (for CreateTaskModal AI mode) ──────
+
+export interface SuggestedTask {
+  title: string
+  description: string
+  category: string
+  estimatedTime: string
+  priority: 'low' | 'medium' | 'high'
+  subtasks: { title: string }[]
+  requiresInput: boolean
+  inputPrompt: string
+}
+
+function mockSuggestedTasks(employeeRole: string, employeeName: string, userRequest: string): SuggestedTask[] {
+  const role = (employeeRole + userRequest).toLowerCase()
+
+  if (role.includes('engineer') || role.includes('developer') || role.includes('technical')) {
+    return [
+      { title: 'Set up local development environment', description: 'Clone the main repository, install all dependencies, and verify the app runs locally.', category: 'Setup', estimatedTime: '1.5 hrs', priority: 'high', subtasks: [{ title: 'Clone repository' }, { title: 'Install Node.js & dependencies' }, { title: 'Run app locally and verify' }], requiresInput: false, inputPrompt: '' },
+      { title: 'Complete codebase architecture review', description: 'Read the architecture documentation and diagram the major system components.', category: 'Learning', estimatedTime: '1 hr', priority: 'medium', subtasks: [{ title: 'Read architecture docs' }, { title: 'Map service boundaries' }], requiresInput: true, inputPrompt: 'Describe 3 things you learned about our system architecture.' },
+      { title: 'Submit first pull request', description: 'Pick a "good first issue" from the backlog and submit a PR following team guidelines.', category: 'Technical', estimatedTime: '2 hrs', priority: 'medium', subtasks: [{ title: 'Pick issue from backlog' }, { title: 'Implement fix' }, { title: 'Write unit tests' }, { title: 'Submit PR for review' }], requiresInput: false, inputPrompt: '' },
+    ]
+  }
+
+  if (role.includes('sales') || role.includes('crm') || role.includes('quota')) {
+    return [
+      { title: 'Complete Salesforce CRM setup', description: 'Configure your CRM profile, pipeline view, and import your initial prospect list.', category: 'Tools', estimatedTime: '1 hr', priority: 'high', subtasks: [{ title: 'Log in and configure profile' }, { title: 'Set up pipeline stages' }, { title: 'Add 5 initial prospects' }], requiresInput: false, inputPrompt: '' },
+      { title: 'Product knowledge certification', description: 'Complete the 4 core product modules and pass the certification quiz with 80%+.', category: 'Learning', estimatedTime: '2 hrs', priority: 'high', subtasks: [{ title: 'Modules 1–2' }, { title: 'Modules 3–4' }, { title: 'Pass quiz' }], requiresInput: true, inputPrompt: 'What are the top 3 customer pain points our product solves? Write your answer here.' },
+      { title: 'Shadow 3 discovery calls', description: 'Observe senior reps on real prospect calls and take structured BANT notes.', category: 'Learning', estimatedTime: '3 hrs', priority: 'medium', subtasks: [{ title: 'Call 1 observation' }, { title: 'Call 2 observation' }, { title: 'Call 3 observation' }], requiresInput: true, inputPrompt: 'After shadowing, what objection did you hear most? How was it handled?' },
+    ]
+  }
+
+  if (role.includes('design') || role.includes('ux') || role.includes('ui')) {
+    return [
+      { title: 'Design system deep-dive', description: 'Review the Figma component library and document any inconsistencies or gaps.', category: 'Learning', estimatedTime: '2 hrs', priority: 'high', subtasks: [{ title: 'Review Figma components' }, { title: 'Document inconsistencies' }], requiresInput: false, inputPrompt: '' },
+      { title: 'Accessibility audit of main screens', description: 'Run the top 5 screens through WCAG 2.1 AA checklist and file issues.', category: 'Compliance', estimatedTime: '2 hrs', priority: 'medium', subtasks: [{ title: 'Audit screen 1-2' }, { title: 'Audit screen 3-4' }, { title: 'Audit screen 5' }, { title: 'File accessibility issues' }], requiresInput: true, inputPrompt: 'List the top 3 accessibility issues you found and how you would fix them.' },
+    ]
+  }
+
+  // Generic
+  return [
+    { title: `Complete ${employeeName.split(' ')[0]}'s onboarding checklist`, description: 'Review all sections of the employee handbook and acknowledge receipt.', category: 'Compliance', estimatedTime: '45 min', priority: 'high', subtasks: [{ title: 'Read company values section' }, { title: 'Review PTO policy' }, { title: 'Sign acknowledgement' }], requiresInput: false, inputPrompt: '' },
+    { title: 'Meet key stakeholders', description: 'Schedule intro 1:1 calls with 5 cross-functional partners.', category: 'People', estimatedTime: '1.5 hrs', priority: 'medium', subtasks: [{ title: 'Schedule calls' }, { title: 'Prepare intro questions' }, { title: 'Complete all 5 calls' }], requiresInput: true, inputPrompt: 'Who did you meet and what was one thing you learned from each person?' },
+    { title: 'Complete tools & access setup', description: 'Ensure all required software is installed and access is provisioned.', category: 'Tools', estimatedTime: '30 min', priority: 'high', subtasks: [{ title: 'Email & calendar' }, { title: 'Slack & communication tools' }, { title: 'Role-specific tools' }], requiresInput: false, inputPrompt: '' },
+  ]
+}
+
+export async function suggestTasksForEmployee(
+  employeeRole: string,
+  employeeName: string,
+  userRequest: string,
+  documentContext?: string
+): Promise<SuggestedTask[]> {
+  const token = await getAccessToken()
+
+  if (token) {
+    const chatId = await createChat(token)
+    if (chatId) {
+      const prompt = `You are an onboarding specialist AI. Generate 3-5 specific onboarding tasks for a new employee.
+Employee: ${employeeName}, Role: ${employeeRole}
+Manager request: ${userRequest}
+${documentContext ? `Company context: ${documentContext.slice(0, 800)}` : ''}
+
+For each task, provide JSON format strictly like this array (no markdown, just the JSON array):
+[{"title":"...","description":"...","category":"Setup|Learning|Technical|Compliance|People|Tools|Admin","estimatedTime":"...","priority":"low|medium|high","subtasks":[{"title":"..."}],"requiresInput":false,"inputPrompt":""}]`
+      const response = await sendMessage(token, chatId, prompt)
+      if (response) {
+        try {
+          const jsonMatch = response.match(/\[[\s\S]*\]/)
+          if (jsonMatch) {
+            const parsed = JSON.parse(jsonMatch[0]) as SuggestedTask[]
+            if (Array.isArray(parsed) && parsed.length > 0) return parsed
+          }
+        } catch { /* fall through to mock */ }
+      }
+    }
+  }
+
+  await new Promise(r => setTimeout(r, 1000 + Math.random() * 600))
+  return mockSuggestedTasks(employeeRole, employeeName, userRequest)
+}
+
 // ─── Task extraction helper ───────────────────────────────────────────────────
 // Parses AI response text to extract structured tasks
 

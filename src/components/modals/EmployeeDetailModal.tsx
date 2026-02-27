@@ -1,6 +1,8 @@
-import { X, Mail, Users, Calendar, TrendingUp, CheckCircle, Clock, AlertCircle, FileText } from 'lucide-react'
+import { useState } from 'react'
+import { X, Mail, Users, Calendar, TrendingUp, CheckCircle, Clock, AlertCircle, FileText, Trash2, Plus, ChevronDown, ChevronUp, Link2 } from 'lucide-react'
 import { useApp, initialMentors } from '../../context/AppContext'
 import type { Employee } from '../../context/AppContext'
+import CreateTaskModal from './CreateTaskModal'
 
 interface Props {
   employee: Employee
@@ -8,7 +10,10 @@ interface Props {
 }
 
 export default function EmployeeDetailModal({ employee, onClose }: Props) {
-  const { state } = useApp()
+  const { state, dispatch } = useApp()
+  const [showConfirm,    setShowConfirm]    = useState(false)
+  const [showCreateTask, setShowCreateTask] = useState(false)
+  const [expandedTask,   setExpandedTask]   = useState<Record<string, boolean>>({})
   const mentor   = initialMentors.find(m => m.id === employee.mentorId)
   const myTasks  = state.tasks.filter(t => t.assignedTo === employee.id)
   const done     = myTasks.filter(t => t.status === 'done')
@@ -23,6 +28,7 @@ export default function EmployeeDetailModal({ employee, onClose }: Props) {
   }
 
   return (
+    <>
     <div className="fixed inset-0 z-50 flex items-center justify-center px-4" onClick={onClose}>
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
       <div
@@ -102,30 +108,120 @@ export default function EmployeeDetailModal({ employee, onClose }: Props) {
           <div>
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-bold text-brown-900">Assigned Tasks</h3>
-              <span className="text-xs text-brown-500 font-medium">{rate}% complete · {myTasks.length} total</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-brown-500 font-medium">{rate}% complete · {myTasks.length} total</span>
+                <button
+                  onClick={() => setShowCreateTask(true)}
+                  className="btn-primary text-xs py-1.5 px-3 flex items-center gap-1"
+                >
+                  <Plus size={12} /> Create Task
+                </button>
+              </div>
             </div>
 
             {myTasks.length === 0 ? (
               <div className="text-center py-10 bg-brown-50 rounded-xl border border-dashed border-brown-200">
                 <FileText size={28} className="mx-auto mb-2 text-brown-300" />
-                <p className="text-sm text-brown-500">No tasks assigned yet</p>
+                <p className="text-sm text-brown-500 mb-3">No tasks assigned yet</p>
+                <button onClick={() => setShowCreateTask(true)} className="btn-primary text-xs py-2 px-4 inline-flex items-center gap-1.5">
+                  <Plus size={13} /> Create First Task
+                </button>
               </div>
             ) : (
-              <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+              <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
                 {myTasks.map(task => {
-                  const style = taskStatusStyle(task.status)
+                  const style    = taskStatusStyle(task.status)
+                  const isExpanded = expandedTask[task.id]
+                  const hasSubs  = (task.subtasks ?? []).length > 0
+                  const hasLinks = (task.supportingLinks ?? []).length > 0
+                  const hasDocs  = (task.supportingDocs ?? []).length > 0
+                  const hasExtra = hasSubs || hasLinks || hasDocs || task.requiresInput
                   return (
-                    <div key={task.id} className="flex items-center gap-3 p-3 rounded-xl border border-brown-100 bg-white hover:bg-brown-50/50 transition-colors">
-                      {style.icon}
-                      <div className="flex-1 min-w-0">
-                        <p className={`text-sm font-medium truncate ${task.status === 'done' ? 'line-through text-brown-400' : 'text-brown-800'}`}>
-                          {task.title}
-                        </p>
-                        <p className="text-xs text-brown-400">{task.category} · {task.estimatedTime}</p>
+                    <div key={task.id} className="rounded-xl border border-brown-100 bg-white overflow-hidden">
+                      <div className="flex items-center gap-3 p-3">
+                        {style.icon}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className={`text-sm font-medium truncate ${task.status === 'done' ? 'line-through text-brown-400' : 'text-brown-800'}`}>
+                              {task.title}
+                            </p>
+                            {task.priority === 'high' && <span className="text-xs font-semibold px-1.5 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-100 flex-shrink-0">High</span>}
+                            {task.requiresInput && <span className="text-xs font-semibold px-1.5 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-100 flex-shrink-0 flex items-center gap-1"><AlertCircle size={9} />Input needed</span>}
+                          </div>
+                          <p className="text-xs text-brown-400">{task.category} · {task.estimatedTime}</p>
+                        </div>
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${style.chip}`}>
+                          {task.status === 'done' ? 'Done' : task.status === 'in-progress' ? 'In Progress' : 'Pending'}
+                        </span>
+                        {hasExtra && (
+                          <button
+                            onClick={() => setExpandedTask(ex => ({ ...ex, [task.id]: !ex[task.id] }))}
+                            className="p-1 rounded hover:bg-brown-50 text-brown-400 flex-shrink-0"
+                          >
+                            {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                          </button>
+                        )}
                       </div>
-                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${style.chip}`}>
-                        {task.status === 'done' ? 'Done' : task.status === 'in-progress' ? 'In Progress' : 'Pending'}
-                      </span>
+
+                      {/* Expanded details */}
+                      {isExpanded && hasExtra && (
+                        <div className="border-t border-brown-100 px-3 pb-3 pt-2.5 space-y-3 bg-brown-50/40">
+                          {hasSubs && (
+                            <div>
+                              <p className="text-xs font-semibold text-brown-500 mb-1.5">Subtasks</p>
+                              <div className="space-y-1">
+                                {(task.subtasks ?? []).map(st => (
+                                  <div key={st.id} className="flex items-center gap-2">
+                                    <button
+                                      onClick={() => dispatch({ type: 'UPDATE_SUBTASK_STATUS', payload: { taskId: task.id, subtaskId: st.id, status: st.status === 'done' ? 'pending' : 'done' } })}
+                                      className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${st.status === 'done' ? 'bg-green-500 border-green-500' : 'border-brown-300 hover:border-brown-500'}`}
+                                    >
+                                      {st.status === 'done' && <CheckCircle size={10} className="text-white" />}
+                                    </button>
+                                    <span className={`text-xs ${st.status === 'done' ? 'line-through text-brown-400' : 'text-brown-700'}`}>{st.title}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {hasDocs && (
+                            <div>
+                              <p className="text-xs font-semibold text-brown-500 mb-1">Supporting Documents</p>
+                              {(task.supportingDocs ?? []).map(dId => {
+                                const doc = state.documents.find(d => d.id === dId)
+                                return doc ? (
+                                  <div key={dId} className="flex items-center gap-1.5 text-xs text-brown-600">
+                                    <FileText size={11} className="text-red-400 flex-shrink-0" />
+                                    {doc.name}
+                                  </div>
+                                ) : null
+                              })}
+                            </div>
+                          )}
+                          {hasLinks && (
+                            <div>
+                              <p className="text-xs font-semibold text-brown-500 mb-1">Links</p>
+                              {(task.supportingLinks ?? []).map((lnk, i) => (
+                                <a key={i} href={lnk.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs text-blue-600 hover:underline">
+                                  <Link2 size={11} className="flex-shrink-0" />
+                                  {lnk.label}
+                                </a>
+                              ))}
+                            </div>
+                          )}
+                          {task.requiresInput && (
+                            <div className="bg-purple-50 border border-purple-100 rounded-lg p-2.5">
+                              <p className="text-xs font-semibold text-purple-700 mb-1 flex items-center gap-1"><AlertCircle size={11} />Employee Input Required</p>
+                              <p className="text-xs text-purple-600 mb-2">{task.inputPrompt}</p>
+                              {task.inputValue ? (
+                                <div className="bg-white border border-purple-200 rounded p-2 text-xs text-brown-800">{task.inputValue}</div>
+                              ) : (
+                                <p className="text-xs text-purple-400 italic">Awaiting employee response…</p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )
                 })}
@@ -144,8 +240,41 @@ export default function EmployeeDetailModal({ employee, onClose }: Props) {
               <span className="badge-green flex items-center gap-1"><CheckCircle size={11} />Uploaded</span>
             </div>
           )}
+
+          {/* Remove from org */}
+          {!showConfirm ? (
+            <button
+              onClick={() => setShowConfirm(true)}
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-red-200 text-red-500 hover:bg-red-50 hover:border-red-400 transition-colors text-sm font-semibold"
+            >
+              <Trash2 size={14} /> Remove from Organization
+            </button>
+          ) : (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-3">
+              <p className="text-sm font-semibold text-red-800">
+                Confirm removal of <strong>{employee.name}</strong>? All their tasks will also be deleted. This cannot be undone.
+              </p>
+              <div className="flex gap-2">
+                <button onClick={() => setShowConfirm(false)} className="flex-1 btn-secondary text-sm py-2">Cancel</button>
+                <button
+                  onClick={() => {
+                    dispatch({ type: 'REMOVE_EMPLOYEE', payload: { id: employee.id } })
+                    onClose()
+                  }}
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-xl transition-colors text-sm flex items-center justify-center gap-1.5"
+                >
+                  <Trash2 size={13} /> Yes, Remove
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
+
+    {showCreateTask && (
+      <CreateTaskModal employee={employee} onClose={() => setShowCreateTask(false)} />
+    )}
+  </>
   )
 }
