@@ -1,48 +1,118 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { Menu, X, Bell, ChevronDown, User } from 'lucide-react'
 import Logo from './Logo'
+import { useApp, initialMentors } from '../../context/AppContext'
 
 interface NavbarProps {
   variant?: 'landing' | 'app'
+  title?: string
+  onProfileClick?: () => void
 }
 
-export default function Navbar({ variant = 'landing' }: NavbarProps) {
-  const [mobileOpen, setMobileOpen] = useState(false)
+export default function Navbar({ variant = 'landing', title, onProfileClick }: NavbarProps) {
+  const [mobileOpen,  setMobileOpen]  = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
-  const location = useLocation()
+  const [notifOpen,   setNotifOpen]   = useState(false)
+  const notifRef   = useRef<HTMLDivElement>(null)
+  const profileRef = useRef<HTMLDivElement>(null)
+  const location   = useLocation()
+  const { state }  = useApp()
 
+  // Close dropdowns on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (notifRef.current   && !notifRef.current.contains(e.target as Node))   setNotifOpen(false)
+      if (profileRef.current && !profileRef.current.contains(e.target as Node)) setProfileOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  // ── Role-based display info ──────────────────────────────────────────────────
+  const getUser = () => {
+    const { currentRole, currentUserId, employees } = state
+    if (currentRole === 'admin')    return { name: 'Admin',      initials: 'A',  color: '#2B85DC' }
+    if (currentRole === 'hr')       return { name: 'HR Manager', initials: 'HR', color: '#7C3AED' }
+    if (currentRole === 'mentor') {
+      const m = initialMentors.find(x => x.id === currentUserId)
+      return m ? { name: m.name, initials: m.initials, color: m.color } : { name: 'Mentor', initials: 'M', color: '#0D9488' }
+    }
+    if (currentRole === 'employee') {
+      const e = employees.find(x => x.id === currentUserId)
+      return e ? { name: e.name, initials: e.initials, color: e.color } : { name: 'New Hire', initials: 'NH', color: '#16A34A' }
+    }
+    return { name: 'User', initials: 'U', color: '#2B85DC' }
+  }
+
+  const user = getUser()
+
+  // ── App variant ─────────────────────────────────────────────────────────────
   if (variant === 'app') {
     return (
-      <nav className="sticky top-0 z-40 bg-brown-50 border-b border-brown-200 shadow-sm" style={{ background: '#FFF8DC' }}>
+      <nav className="sticky top-0 z-40 border-b border-brown-200 shadow-sm" style={{ background: '#F0F7FF' }}>
         <div className="flex items-center justify-between px-6 h-16">
-          <Link to="/" className="flex items-center">
-            <Logo size="sm" />
-          </Link>
 
-          <div className="flex items-center gap-3">
-            <button className="relative p-2 rounded-lg hover:bg-brown-100 transition-colors text-brown-600">
-              <Bell size={20} />
-              <span className="absolute top-1 right-1 w-2 h-2 bg-brown-500 rounded-full"></span>
-            </button>
-            <div className="relative">
+          {/* Left: Portal title */}
+          <div>
+            {title
+              ? <h1 className="text-lg font-bold text-brown-900">{title}</h1>
+              : <Link to="/"><Logo size="sm" /></Link>
+            }
+          </div>
+
+          <div className="flex items-center gap-2">
+
+            {/* Notifications */}
+            <div className="relative" ref={notifRef}>
               <button
-                onClick={() => setProfileOpen(!profileOpen)}
+                onClick={() => { setNotifOpen(!notifOpen); setProfileOpen(false) }}
+                className="relative p-2 rounded-lg hover:bg-brown-100 transition-colors text-brown-600"
+              >
+                <Bell size={20} />
+                {/* dot hidden since no notifications */}
+              </button>
+              {notifOpen && (
+                <div className="absolute right-0 mt-2 w-72 bg-white border border-brown-200 rounded-2xl shadow-xl py-1 z-50 animate-fade-in">
+                  <div className="px-4 py-3 border-b border-brown-100 flex items-center justify-between">
+                    <p className="font-bold text-brown-900 text-sm">Notifications</p>
+                    <span className="text-xs text-brown-400">0 new</span>
+                  </div>
+                  <div className="flex flex-col items-center justify-center py-10 text-brown-400">
+                    <Bell size={28} className="mb-2 opacity-30" />
+                    <p className="text-sm font-medium">No notifications yet</p>
+                    <p className="text-xs mt-1 opacity-70">You're all caught up!</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Profile */}
+            <div className="relative" ref={profileRef}>
+              <button
+                onClick={() => { setProfileOpen(!profileOpen); setNotifOpen(false) }}
                 className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-brown-100 transition-colors"
               >
-                <div className="w-8 h-8 rounded-full bg-brown-500 flex items-center justify-center text-white text-sm font-semibold">
-                  SR
+                <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-semibold" style={{ background: user.color }}>
+                  {user.initials}
                 </div>
-                <span className="text-brown-800 font-medium text-sm hidden sm:block">Sam Rivera</span>
+                <span className="text-brown-800 font-medium text-sm hidden sm:block">{user.name}</span>
                 <ChevronDown size={16} className="text-brown-500" />
               </button>
               {profileOpen && (
-                <div className="absolute right-0 mt-2 w-48 bg-white border border-brown-200 rounded-xl shadow-lg py-1 z-50 animate-fade-in">
-                  <a href="#" className="flex items-center gap-2 px-4 py-2.5 text-sm text-brown-700 hover:bg-brown-50 transition-colors">
-                    <User size={16} /> Profile
-                  </a>
+                <div className="absolute right-0 mt-2 w-52 bg-white border border-brown-200 rounded-xl shadow-lg py-1 z-50 animate-fade-in">
+                  <div className="px-4 py-3 border-b border-brown-100">
+                    <p className="font-semibold text-brown-900 text-sm">{user.name}</p>
+                    <p className="text-xs text-brown-400 capitalize mt-0.5">{state.currentRole ?? 'User'}</p>
+                  </div>
+                  <button
+                    onClick={() => { setProfileOpen(false); onProfileClick?.() }}
+                    className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-brown-700 hover:bg-brown-50 transition-colors"
+                  >
+                    <User size={15} /> My Profile
+                  </button>
                   <hr className="my-1 border-brown-100" />
-                  <Link to="/" className="flex items-center gap-2 px-4 py-2.5 text-sm text-brown-700 hover:bg-brown-50 transition-colors">
+                  <Link to="/" className="flex items-center gap-2 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors">
                     Sign Out
                   </Link>
                 </div>
@@ -54,66 +124,45 @@ export default function Navbar({ variant = 'landing' }: NavbarProps) {
     )
   }
 
+  // ── Landing variant ─────────────────────────────────────────────────────────
   const navLinks = [
-    { label: 'Features', href: '#features' },
-    { label: 'How It Works', href: '#how-it-works' },
-    { label: 'Pricing', href: '#pricing' },
-    { label: 'Testimonials', href: '#testimonials' },
+    { label: 'Features',     href: '#features'     },
+    { label: 'How It Works', href: '#how-it-works'  },
+    { label: 'Pricing',      href: '#pricing'       },
+    { label: 'Testimonials', href: '#testimonials'  },
   ]
 
   return (
-    <nav className="sticky top-0 z-40 border-b border-brown-200 shadow-sm" style={{ background: '#FFF8DC' }}>
+    <nav className="sticky top-0 z-40 border-b border-brown-200 shadow-sm" style={{ background: '#F0F7FF' }}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
-          <Link to="/">
-            <Logo size="md" />
-          </Link>
+          <Link to="/"><Logo size="md" /></Link>
 
-          {/* Desktop nav */}
           <div className="hidden md:flex items-center gap-8">
             {navLinks.map(link => (
-              <a
-                key={link.label}
-                href={link.href}
-                className="text-brown-600 hover:text-brown-900 font-medium text-sm transition-colors"
-              >
+              <a key={link.label} href={link.href} className="text-brown-600 hover:text-brown-900 font-medium text-sm transition-colors">
                 {link.label}
               </a>
             ))}
           </div>
 
           <div className="hidden md:flex items-center gap-3">
-            <Link
-              to="/login"
-              className="text-brown-600 hover:text-brown-900 font-medium text-sm px-4 py-2 rounded-lg hover:bg-brown-100 transition-colors"
-            >
+            <Link to="/login" className="text-brown-600 hover:text-brown-900 font-medium text-sm px-4 py-2 rounded-lg hover:bg-brown-100 transition-colors">
               Sign In
             </Link>
-            <Link to="/setup" className="btn-primary text-sm py-2.5 px-5">
-              Get Started Free
-            </Link>
+            <Link to="/setup" className="btn-primary text-sm py-2.5 px-5">Get Started Free</Link>
           </div>
 
-          {/* Mobile toggle */}
-          <button
-            onClick={() => setMobileOpen(!mobileOpen)}
-            className="md:hidden p-2 rounded-lg hover:bg-brown-100 text-brown-700 transition-colors"
-          >
+          <button onClick={() => setMobileOpen(!mobileOpen)} className="md:hidden p-2 rounded-lg hover:bg-brown-100 text-brown-700 transition-colors">
             {mobileOpen ? <X size={22} /> : <Menu size={22} />}
           </button>
         </div>
       </div>
 
-      {/* Mobile menu */}
       {mobileOpen && (
         <div className="md:hidden bg-white border-t border-brown-200 px-4 py-4 space-y-2 animate-fade-in">
           {navLinks.map(link => (
-            <a
-              key={link.label}
-              href={link.href}
-              onClick={() => setMobileOpen(false)}
-              className="block py-2.5 px-4 text-brown-700 hover:bg-brown-50 rounded-lg font-medium transition-colors"
-            >
+            <a key={link.label} href={link.href} onClick={() => setMobileOpen(false)} className="block py-2.5 px-4 text-brown-700 hover:bg-brown-50 rounded-lg font-medium transition-colors">
               {link.label}
             </a>
           ))}

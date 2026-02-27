@@ -74,7 +74,7 @@ export default function SetupWizard() {
 
   if (complete) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-brown-50" style={{ background: '#FFF8DC' }}>
+      <div className="min-h-screen flex items-center justify-center bg-brown-50" style={{ background: '#F0F7FF' }}>
         <div className="text-center animate-bounce-in">
           <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
             <CheckCircle size={48} className="text-green-600" />
@@ -88,7 +88,7 @@ export default function SetupWizard() {
   }
 
   return (
-    <div className="min-h-screen" style={{ background: '#FFF8DC' }}>
+    <div className="min-h-screen" style={{ background: '#F0F7FF' }}>
       <div className="max-w-4xl mx-auto px-4 py-8">
         {/* Step progress */}
         <div className="mb-10">

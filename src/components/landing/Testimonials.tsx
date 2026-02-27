@@ -8,7 +8,7 @@ const testimonials = [
     role: "CTO",
     company: "BuildFast Labs",
     initials: "SC",
-    color: "#8B4513",
+    color: "#2B85DC",
     stars: 5,
   },
   {
@@ -17,7 +17,7 @@ const testimonials = [
     role: "Head of People",
     company: "Velocity Health",
     initials: "MJ",
-    color: "#A0724A",
+    color: "#4EA0EB",
     stars: 5,
   },
   {
@@ -26,7 +26,7 @@ const testimonials = [
     role: "Founder & CEO",
     company: "DataSprint",
     initials: "PS",
-    color: "#C49A6C",
+    color: "#7DBCF5",
     stars: 5,
   },
   {
@@ -35,7 +35,7 @@ const testimonials = [
     role: "VP Operations",
     company: "ScaleForce",
     initials: "TR",
-    color: "#D2B48C",
+    color: "#B3D8FF",
     stars: 5,
   },
   {
@@ -44,7 +44,7 @@ const testimonials = [
     role: "HR Manager",
     company: "NexGen Fintech",
     initials: "AW",
-    color: "#7A3C10",
+    color: "#1F6EC4",
     stars: 5,
   },
   {
@@ -53,7 +53,7 @@ const testimonials = [
     role: "CEO",
     company: "Clarity AI",
     initials: "DP",
-    color: "#6B3410",
+    color: "#1558A8",
     stars: 5,
   },
 ]

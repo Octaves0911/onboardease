@@ -61,7 +61,7 @@ export default function Pricing() {
   const [annual, setAnnual] = useState(false)
 
   return (
-    <section id="pricing" className="py-20 lg:py-28" style={{ background: '#F5F5DC' }}>
+    <section id="pricing" className="py-20 lg:py-28" style={{ background: '#E0EFFD' }}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-14">
           <div className="inline-flex items-center gap-2 bg-brown-500/10 text-brown-700 text-sm font-medium px-4 py-2 rounded-full mb-4">

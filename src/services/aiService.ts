@@ -1,10 +1,11 @@
 // ─── Deploy AI Service ────────────────────────────────────────────────────────
 // Calls Deploy AI API for real responses. Falls back to smart mocks on error.
 
-const AUTH_URL = 'https://api-auth.dev.deploy.ai/oauth2/token'
-const API_URL  = 'https://core-api.dev.deploy.ai'
-const ORG_ID   = '47e06cd4-2cfc-4020-bd40-155e24c723cf'
-const AGENT_ID = 'GPT_4O'
+const AUTH_URL         = 'https://api-auth.dev.deploy.ai/oauth2/token'
+const API_URL          = 'https://core-api.dev.deploy.ai'
+const ORG_ID           = '47e06cd4-2cfc-4020-bd40-155e24c723cf'
+const AGENT_ID         = 'GPT_4O'            // general-purpose agent
+const TASK_AGENT_ID    = 'task_generator'    // dedicated task-generation agent
 
 // ─── Auth token (cached) ──────────────────────────────────────────────────────
 let cachedToken: string | null = null
@@ -27,12 +28,12 @@ async function getAccessToken(): Promise<string | null> {
   } catch { return null }
 }
 
-async function createChat(token: string): Promise<string | null> {
+async function createChat(token: string, agentId: string = AGENT_ID): Promise<string | null> {
   try {
     const res = await fetch(`${API_URL}/chats`, {
       method: 'POST',
       headers: { 'accept': 'application/json', 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'X-Org': ORG_ID },
-      body: JSON.stringify({ agentId: AGENT_ID, stream: false }),
+      body: JSON.stringify({ agentId, stream: false }),
     })
     if (!res.ok) return null
     const data = await res.json()
@@ -368,14 +369,16 @@ export async function suggestTasksForEmployee(
   const token = await getAccessToken()
 
   if (token) {
-    const chatId = await createChat(token)
+    const chatId = await createChat(token, TASK_AGENT_ID)
     if (chatId) {
-      const prompt = `You are an onboarding specialist AI. Generate 3-5 specific onboarding tasks for a new employee.
+      const prompt = `You are an onboarding specialist. Generate 3-5 specific onboarding tasks strictly tailored to the employee's role.
 Employee: ${employeeName}, Role: ${employeeRole}
-Manager request: ${userRequest}
+Admin request: ${userRequest}
 ${documentContext ? `Company context: ${documentContext.slice(0, 800)}` : ''}
 
-For each task, provide JSON format strictly like this array (no markdown, just the JSON array):
+IMPORTANT: Tasks must be relevant to the "${employeeRole}" role only. Do NOT generate software/engineering tasks unless the role is explicitly technical.
+
+Respond with ONLY a JSON array (no markdown, no explanation):
 [{"title":"...","description":"...","category":"Setup|Learning|Technical|Compliance|People|Tools|Admin","estimatedTime":"...","priority":"low|medium|high","subtasks":[{"title":"..."}],"requiresInput":false,"inputPrompt":""}]`
       const response = await sendMessage(token, chatId, prompt)
       if (response) {
@@ -392,6 +395,99 @@ For each task, provide JSON format strictly like this array (no markdown, just t
 
   await new Promise(r => setTimeout(r, 1000 + Math.random() * 600))
   return mockSuggestedTasks(employeeRole, employeeName, userRequest)
+}
+
+// ─── Conversational task-creation agent (per-employee chat) ──────────────────
+// Keeps a persistent chatId so follow-up messages stay in the same session.
+
+export interface TaskChatMessage {
+  role: 'user' | 'agent'
+  content: string
+  tasks?: SuggestedTask[]   // populated when agent includes JSON task array
+}
+
+let taskChatId: string | null = null
+let taskChatToken: string | null = null
+
+export async function resetTaskChat() {
+  taskChatId = null
+  taskChatToken = null
+}
+
+export async function sendTaskChatMessage(
+  userMessage: string,
+  employeeName: string,
+  employeeRole: string,
+  documentContext: string
+): Promise<TaskChatMessage> {
+  // Try real agent first
+  const token = taskChatToken ?? await getAccessToken()
+  if (token) {
+    taskChatToken = token
+    // Capture BEFORE creating chat so we know if this is the first message
+    const isFirstMessage = !taskChatId
+    if (!taskChatId) {
+      const id = await createChat(token, TASK_AGENT_ID)
+      if (id) taskChatId = id
+    }
+    if (taskChatId) {
+      // On the first message inject the employee role context so the agent
+      // generates tasks strictly relevant to that role
+      const fullMsg = isFirstMessage
+        ? `You are an expert onboarding task designer. You must generate tasks STRICTLY relevant to the employee's role — never default to software/engineering tasks for non-technical roles.\n\nEmployee: ${employeeName}\nRole: ${employeeRole}\n${documentContext ? `Company docs context: ${documentContext.slice(0, 600)}` : ''}\n\nWhen you suggest tasks, always append a JSON array at the END of your reply in this exact format (no markdown fences):\n[{"title":"...","description":"...","category":"Setup|Learning|Technical|Compliance|People|Tools|Admin","estimatedTime":"...","priority":"low|medium|high","subtasks":[{"title":"..."}],"requiresInput":false,"inputPrompt":""}]\n\nAdmin request: ${userMessage}`
+        : userMessage
+
+      const reply = await sendMessage(token, taskChatId, fullMsg)
+      if (reply) {
+        const tasks = _extractTasksFromText(reply)
+        return { role: 'agent', content: reply, tasks: tasks.length > 0 ? tasks : undefined }
+      }
+    }
+  }
+
+  // Mock fallback — simulate a conversational response
+  await new Promise(r => setTimeout(r, 900 + Math.random() * 700))
+  const lower = userMessage.toLowerCase()
+  const mockTasks = mockSuggestedTasks(employeeRole, employeeName, userMessage)
+
+  if (lower.includes('change') || lower.includes('modify') || lower.includes('update') || lower.includes('instead')) {
+    return {
+      role: 'agent',
+      content: `Sure! I've updated the task list based on your feedback. Here are the revised tasks for ${employeeName}:`,
+      tasks: mockTasks.map(t => ({ ...t, title: `[Updated] ${t.title}` })),
+    }
+  }
+  if (lower.includes('more') || lower.includes('add') || lower.includes('additional')) {
+    return {
+      role: 'agent',
+      content: `Here are some additional tasks I'd suggest for ${employeeName} as a ${employeeRole}:`,
+      tasks: mockTasks,
+    }
+  }
+  if (lower.includes('remove') || lower.includes('delete') || lower.includes('fewer')) {
+    return {
+      role: 'agent',
+      content: `Understood. I've simplified the list to the most essential tasks for ${employeeName}'s first week.`,
+      tasks: mockTasks.slice(0, 2),
+    }
+  }
+
+  return {
+    role: 'agent',
+    content: `Here's a tailored onboarding task list for ${employeeName} (${employeeRole}). You can ask me to adjust priorities, add more tasks, focus on specific areas, or modify any task. Just let me know!`,
+    tasks: mockTasks,
+  }
+}
+
+function _extractTasksFromText(text: string): SuggestedTask[] {
+  try {
+    const match = text.match(/\[[\s\S]*?\]/)
+    if (match) {
+      const parsed = JSON.parse(match[0])
+      if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].title) return parsed
+    }
+  } catch { /* ignore */ }
+  return []
 }
 
 // ─── Task extraction helper ───────────────────────────────────────────────────

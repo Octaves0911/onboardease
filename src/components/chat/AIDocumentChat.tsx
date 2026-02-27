@@ -70,22 +70,26 @@ export default function AIDocumentChat({ onClose, assignedBy, assignedByName, pr
   const handleUploadDoc = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    const newDoc: Document = {
-      id: `doc-${Date.now()}`,
-      name: file.name.replace(/\.[^/.]+$/, ''),
-      type: file.name.split('.').pop()?.toUpperCase() ?? 'PDF',
-      size: `${(file.size / 1024).toFixed(0)} KB`,
-      status: 'processing',
-      uploadedBy: assignedBy,
-      date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      content: `Document: ${file.name}. This document contains important information about company policies, procedures, and guidelines that need to be reviewed by new employees.`,
+    const reader = new FileReader()
+    reader.onload = () => {
+      const newDoc: Document = {
+        id: `doc-${Date.now()}`,
+        name: file.name.replace(/\.[^/.]+$/, ''),
+        type: file.name.split('.').pop()?.toUpperCase() ?? 'PDF',
+        size: `${(file.size / 1024).toFixed(1)} KB`,
+        status: 'processing',
+        uploadedBy: assignedBy,
+        date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        content: `Document: ${file.name}. This document contains important information about company policies, procedures, and guidelines that need to be reviewed by new employees.`,
+        fileData: reader.result as string,  // base64 data URL for in-session viewing
+      }
+      dispatch({ type: 'ADD_DOCUMENT', payload: newDoc })
+      setSelectedDocId(newDoc.id)
+      setTimeout(() => {
+        setMessages(prev => [...prev, { id: Date.now().toString(), role: 'ai', timestamp: new Date(), content: `✅ **${file.name}** uploaded and processed! I've analyzed the document. What kind of tasks would you like me to generate from it?` }])
+      }, 2000)
     }
-    dispatch({ type: 'ADD_DOCUMENT', payload: newDoc })
-    setSelectedDocId(newDoc.id)
-    setTimeout(() => {
-      // mark as processed
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'ai', timestamp: new Date(), content: `✅ **${file.name}** uploaded and processed! I've analyzed the document. What kind of tasks would you like me to generate from it?` }])
-    }, 2000)
+    reader.readAsDataURL(file)
   }
 
   const formatContent = (content: string) => {

@@ -11,6 +11,8 @@ import EmployeeDetailModal from '../modals/EmployeeDetailModal'
 import PDFViewerModal from '../modals/PDFViewerModal'
 import AddMentorModal from '../modals/AddMentorModal'
 import AIDocumentChat from '../chat/AIDocumentChat'
+import AdminChatWidget from '../chat/AdminChatWidget'
+import BulkTaskGenerationModal from '../modals/BulkTaskGenerationModal'
 import type { Employee, Document, MentorUser } from '../../context/AppContext'
 
 interface Props { activeSection?: string }
@@ -26,6 +28,8 @@ export default function AdminPanel({ activeSection = 'overview' }: Props) {
   const [viewingDoc,       setViewingDoc]       = useState<Document | null>(null)
   const [showAddMentor,    setShowAddMentor]    = useState(false)
   const [confirmRemoveMentor, setConfirmRemoveMentor] = useState<MentorUser | null>(null)
+  const [confirmDeleteDoc,    setConfirmDeleteDoc]    = useState<string | null>(null)
+  const [showBulkGenerate,    setShowBulkGenerate]    = useState(false)
   const docUploadRef = useRef<HTMLInputElement>(null)
 
   const handleDirectUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -74,6 +78,14 @@ export default function AdminPanel({ activeSection = 'overview' }: Props) {
 
   return (
     <div className="min-h-screen" style={{ background: '#F0F7FF' }}>
+      {/* Always-rendered hidden file input for document upload */}
+      <input
+        ref={docUploadRef}
+        type="file"
+        className="hidden"
+        accept=".pdf,.doc,.docx,.txt,.ppt,.pptx,.xls,.xlsx"
+        onChange={handleDirectUpload}
+      />
       <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
 
         {/* Stats — hidden on Mentors tab */}
@@ -102,7 +114,10 @@ export default function AdminPanel({ activeSection = 'overview' }: Props) {
               <div className="card">
                 <div className="flex items-center justify-between mb-5">
                   <h3 className="font-bold text-brown-900 flex items-center gap-2"><BarChart3 size={18} />Employee Progress</h3>
-                  <button onClick={() => setShowAddEmployee(true)} className="btn-primary text-sm py-2 px-4 flex items-center gap-2"><Plus size={14} />Add Employee</button>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => setShowBulkGenerate(true)} className="btn-secondary text-sm py-2 px-3 flex items-center gap-1.5"><Sparkles size={14} />AI Generate Tasks</button>
+                    <button onClick={() => setShowAddEmployee(true)} className="btn-primary text-sm py-2 px-4 flex items-center gap-2"><Plus size={14} />Add Employee</button>
+                  </div>
                 </div>
                 <div className="space-y-4">
                   {state.employees.filter(e => e.status === 'onboarding').map(emp => {
@@ -144,18 +159,13 @@ export default function AdminPanel({ activeSection = 'overview' }: Props) {
                   )}
                 </div>
               </div>
-              <div className="bg-gradient-to-br from-brown-700 to-brown-900 rounded-2xl p-6 text-white">
-                <div className="flex items-start gap-4">
-                  <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center flex-shrink-0"><Sparkles size={22} /></div>
-                  <div className="flex-1">
-                    <h3 className="font-bold text-lg mb-1">AI Task Generator</h3>
-                    <p className="text-white/80 text-sm leading-relaxed mb-4">Upload or select a document — our AI reads it and generates a complete onboarding task list you can assign to any employee.</p>
-                    <button onClick={() => { setSelectedDoc(undefined); setShowAIChat(true) }} className="bg-white text-brown-900 font-bold px-5 py-2.5 rounded-xl hover:bg-brown-50 transition-colors text-sm flex items-center gap-2">
-                      <Bot size={16} /> Open AI Chat
-                    </button>
-                  </div>
-                </div>
-              </div>
+              <AdminChatWidget
+                employeeCount={state.employees.length}
+                atRiskCount={atRisk}
+                avgProgress={avgProg}
+                docCount={state.documents.length}
+                atRiskNames={state.employees.filter(e => e.risk === 'high').map(e => e.name)}
+              />
             </div>
             <div className="space-y-5">
               <div className="card">
@@ -189,7 +199,10 @@ export default function AdminPanel({ activeSection = 'overview' }: Props) {
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-brown-400" />
                 <input placeholder="Search employees…" value={search} onChange={e => setSearch(e.target.value)} className="input-field pl-9 py-2.5 text-sm" />
               </div>
-              <button onClick={() => setShowAddEmployee(true)} className="btn-primary inline-flex items-center gap-2 py-2.5 px-5 text-sm"><Plus size={16} />Add New Employee</button>
+              <div className="flex items-center gap-2">
+                <button onClick={() => setShowBulkGenerate(true)} className="btn-secondary inline-flex items-center gap-2 py-2.5 px-4 text-sm"><Sparkles size={15} />AI Generate Tasks</button>
+                <button onClick={() => setShowAddEmployee(true)} className="btn-primary inline-flex items-center gap-2 py-2.5 px-5 text-sm"><Plus size={16} />Add New Employee</button>
+              </div>
             </div>
             <div className="card overflow-hidden p-0">
               <div className="overflow-x-auto">
@@ -241,45 +254,85 @@ export default function AdminPanel({ activeSection = 'overview' }: Props) {
         {/* ═══ DOCUMENTS ═══ */}
         {activeSection === 'docs' && (
           <div className="space-y-5">
-            {/* Hidden file input */}
-            <input
-              ref={docUploadRef}
-              type="file"
-              className="hidden"
-              accept=".pdf,.doc,.docx,.txt,.ppt,.pptx,.xls,.xlsx"
-              onChange={handleDirectUpload}
-            />
             <div className="border-2 border-dashed border-brown-200 rounded-2xl p-10 text-center hover:border-brown-400 transition-all">
               <div className="w-16 h-16 bg-brown-100 rounded-2xl flex items-center justify-center mx-auto mb-4"><Upload size={28} className="text-brown-500" /></div>
               <h3 className="font-bold text-brown-900 text-lg mb-2">Upload Documents</h3>
-              <p className="text-brown-500 text-sm mb-5">Upload HR policies, guides, playbooks — then use AI to generate onboarding tasks from them</p>
-              <div className="flex items-center justify-center gap-3 flex-wrap">
-                <button
-                  onClick={() => docUploadRef.current?.click()}
-                  className="btn-primary text-sm py-2.5 px-6 inline-flex items-center gap-2"
-                >
-                  <Upload size={16} /> Upload Document
-                </button>
-                <button
-                  onClick={() => { setSelectedDoc(undefined); setShowAIChat(true) }}
-                  className="btn-secondary text-sm py-2.5 px-6 inline-flex items-center gap-2"
-                >
-                  <Bot size={16} /> Generate Tasks with AI
-                </button>
-              </div>
+              <p className="text-brown-500 text-sm mb-5">Upload HR policies, guides, playbooks and onboarding materials</p>
+              <button
+                onClick={() => docUploadRef.current?.click()}
+                className="btn-primary text-sm py-2.5 px-6 inline-flex items-center gap-2"
+              >
+                <Upload size={16} /> Upload Document
+              </button>
             </div>
             <div className="card p-0 overflow-hidden">
-              <div className="px-6 py-4 border-b border-brown-100 flex justify-between items-center"><h3 className="font-bold text-brown-900">Uploaded Documents</h3><span className="badge-brown">{state.documents.length} files</span></div>
+              <div className="px-6 py-4 border-b border-brown-100 flex justify-between items-center">
+                <h3 className="font-bold text-brown-900">Uploaded Documents</h3>
+                <span className="badge-brown">{state.documents.length} files</span>
+              </div>
               <div className="divide-y divide-brown-100">
+                {state.documents.length === 0 && (
+                  <div className="text-center py-10 text-brown-400">
+                    <BookOpen size={28} className="mx-auto mb-2 opacity-40" />
+                    <p className="text-sm">No documents uploaded yet.</p>
+                  </div>
+                )}
                 {state.documents.map(doc => (
-                  <div key={doc.id} className="flex items-center gap-4 px-6 py-4 hover:bg-brown-50/50 transition-colors">
-                    <div className="w-10 h-10 bg-red-50 rounded-xl flex items-center justify-center border border-red-200 flex-shrink-0"><BookOpen size={18} className="text-red-500" /></div>
-                    <div className="flex-1 min-w-0"><p className="font-semibold text-brown-900 text-sm truncate">{doc.name}</p><p className="text-xs text-brown-400">{doc.type} · {doc.size} · {doc.date}</p></div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      {doc.status === 'processed' ? <span className="badge-green flex items-center gap-1"><CheckCircle size={11} />Processed</span> : <span className="badge-orange">Processing…</span>}
-                      <button onClick={() => setViewingDoc(doc)} className="text-xs font-semibold text-brown-600 border border-brown-200 bg-white px-2.5 py-1.5 rounded-lg hover:bg-brown-50 transition-colors flex items-center gap-1"><Eye size={12} />View</button>
-                      <button onClick={() => { setSelectedDoc(doc.id); setShowAIChat(true) }} className="text-xs font-semibold text-brown-600 border border-brown-200 bg-white px-2.5 py-1.5 rounded-lg hover:bg-brown-50 transition-colors flex items-center gap-1"><Bot size={12} />Generate Tasks</button>
+                  <div key={doc.id} className={`transition-colors ${confirmDeleteDoc === doc.id ? 'bg-red-50' : 'hover:bg-brown-50/50'}`}>
+                    {/* Main row */}
+                    <div className="flex items-center gap-4 px-6 py-4">
+                      <div className="w-10 h-10 bg-red-50 rounded-xl flex items-center justify-center border border-red-200 flex-shrink-0">
+                        <BookOpen size={18} className="text-red-500" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-brown-900 text-sm truncate">{doc.name}</p>
+                        <p className="text-xs text-brown-400">{doc.type} · {doc.size} · {doc.date}</p>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {doc.status === 'processed'
+                          ? <span className="badge-green flex items-center gap-1"><CheckCircle size={11} />Processed</span>
+                          : <span className="badge-orange">Processing…</span>
+                        }
+                        <button
+                          onClick={() => setViewingDoc(doc)}
+                          className="text-xs font-semibold text-brown-600 border border-brown-200 bg-white px-2.5 py-1.5 rounded-lg hover:bg-brown-50 transition-colors flex items-center gap-1"
+                        >
+                          <Eye size={12} />View
+                        </button>
+                        <button
+                          onClick={() => setConfirmDeleteDoc(confirmDeleteDoc === doc.id ? null : doc.id)}
+                          title="Delete document"
+                          className={`p-1.5 rounded-lg transition-colors ${confirmDeleteDoc === doc.id ? 'text-red-600 bg-red-100' : 'text-red-300 hover:text-red-600 hover:bg-red-50'}`}
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
                     </div>
+                    {/* Inline delete confirmation */}
+                    {confirmDeleteDoc === doc.id && (
+                      <div className="flex items-center justify-between gap-3 px-6 py-3 bg-red-50 border-t border-red-100">
+                        <p className="text-xs text-red-700 font-medium">
+                          Delete <strong>{doc.name}</strong>? This cannot be undone.
+                        </p>
+                        <div className="flex gap-2 flex-shrink-0">
+                          <button
+                            onClick={() => setConfirmDeleteDoc(null)}
+                            className="text-xs px-3 py-1.5 rounded-lg border border-brown-200 bg-white text-brown-600 hover:bg-brown-50 transition-colors"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={() => {
+                              dispatch({ type: 'REMOVE_DOCUMENT', payload: { id: doc.id } })
+                              setConfirmDeleteDoc(null)
+                            }}
+                            className="text-xs px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold transition-colors flex items-center gap-1"
+                          >
+                            <Trash2 size={11} /> Delete
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -601,6 +654,7 @@ export default function AdminPanel({ activeSection = 'overview' }: Props) {
       {showAddMentor     && <AddMentorModal   onClose={() => setShowAddMentor(false)} />}
       {selectedEmployee  && <EmployeeDetailModal employee={selectedEmployee} onClose={() => setSelectedEmployee(null)} />}
       {viewingDoc        && <PDFViewerModal doc={viewingDoc} onClose={() => setViewingDoc(null)} />}
+      {showBulkGenerate  && <BulkTaskGenerationModal onClose={() => setShowBulkGenerate(false)} />}
 
       {/* ── Remove Mentor Confirmation ── */}
       {confirmRemoveMentor && (

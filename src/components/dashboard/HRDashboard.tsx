@@ -31,7 +31,7 @@ export default function HRDashboard() {
   const getEmployeeTasks = (empId: string) => state.tasks.filter(t => t.assignedTo === empId)
 
   return (
-    <div className="min-h-screen" style={{ background: '#FFF8DC' }}>
+    <div className="min-h-screen" style={{ background: '#F0F7FF' }}>
       <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
 
         {/* Stats */}

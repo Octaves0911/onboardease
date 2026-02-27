@@ -5,16 +5,16 @@ export default {
     extend: {
       colors: {
         brown: {
-          50:  '#FFF8DC',
-          100: '#F5F5DC',
-          200: '#D2B48C',
-          300: '#C49A6C',
-          400: '#A0724A',
-          500: '#8B4513',
-          600: '#7A3C10',
-          700: '#6B3410',
-          800: '#5C2D0E',
-          900: '#3E2723',
+          50:  '#F0F7FF',  // Alice blue — near white
+          100: '#D9EEFF',  // Very soft pastel blue
+          200: '#B3D8FF',  // Light pastel blue
+          300: '#7DBCF5',  // Pastel blue
+          400: '#4EA0EB',  // Medium pastel blue
+          500: '#2B85DC',  // Brand blue
+          600: '#1F6EC4',  // Medium-dark blue
+          700: '#1558A8',  // Dark blue
+          800: '#0E4290',  // Very dark blue
+          900: '#072F70',  // Navy
         },
         accent: {
           green: '#90EE90',

@@ -44,6 +44,7 @@ export interface Task {
   assignedByName: string
   status: 'pending' | 'in-progress' | 'done'
   createdAt: string
+  order?: number              // display order within employee task list
   subtasks?: SubTask[]
   supportingDocs?: string[]        // document ids
   supportingLinks?: SupportingLink[]
@@ -92,11 +93,15 @@ type Action =
   | { type: 'UPDATE_TASK_STATUS'; payload: { id: string; status: Task['status'] } }
   | { type: 'UPDATE_SUBTASK_STATUS'; payload: { taskId: string; subtaskId: string; status: SubTask['status'] } }
   | { type: 'UPDATE_TASK_INPUT'; payload: { taskId: string; inputValue: string } }
+  | { type: 'UPDATE_TASK'; payload: { id: string; updates: Partial<Task> } }
+  | { type: 'REMOVE_TASK'; payload: { id: string } }
+  | { type: 'REORDER_TASK'; payload: { id: string; direction: 'up' | 'down'; employeeId: string } }
   | { type: 'ADD_DOCUMENT'; payload: Document }
   | { type: 'UPDATE_EMPLOYEE_RESUME'; payload: { id: string; resumeFileName: string; resumeContent: string } }
   | { type: 'REMOVE_EMPLOYEE'; payload: { id: string } }
   | { type: 'ADD_MENTOR';    payload: MentorUser }
   | { type: 'REMOVE_MENTOR'; payload: { id: string } }
+  | { type: 'REMOVE_DOCUMENT'; payload: { id: string } }
 
 // ─── Initial Data ─────────────────────────────────────────────────────────────
 
@@ -192,6 +197,34 @@ function reducer(state: AppState, action: Action): AppState {
           t.id === action.payload.taskId ? { ...t, inputValue: action.payload.inputValue } : t
         )
       }
+    case 'UPDATE_TASK':
+      return {
+        ...state,
+        tasks: state.tasks.map(t =>
+          t.id === action.payload.id ? { ...t, ...action.payload.updates } : t
+        )
+      }
+    case 'REMOVE_TASK':
+      return { ...state, tasks: state.tasks.filter(t => t.id !== action.payload.id) }
+    case 'REORDER_TASK': {
+      const empTasks = state.tasks.filter(t => t.assignedTo === action.payload.employeeId)
+      const sorted   = [...empTasks].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+      const idx      = sorted.findIndex(t => t.id === action.payload.id)
+      if (idx === -1) return state
+      const swapIdx  = action.payload.direction === 'up' ? idx - 1 : idx + 1
+      if (swapIdx < 0 || swapIdx >= sorted.length) return state
+      // Swap order values
+      const orderA = sorted[idx].order ?? idx
+      const orderB = sorted[swapIdx].order ?? swapIdx
+      return {
+        ...state,
+        tasks: state.tasks.map(t => {
+          if (t.id === sorted[idx].id)    return { ...t, order: orderB }
+          if (t.id === sorted[swapIdx].id) return { ...t, order: orderA }
+          return t
+        }),
+      }
+    }
     case 'REMOVE_EMPLOYEE':
       return {
         ...state,
@@ -211,6 +244,8 @@ function reducer(state: AppState, action: Action): AppState {
       }
     case 'ADD_DOCUMENT':
       return { ...state, documents: [action.payload, ...state.documents] }
+    case 'REMOVE_DOCUMENT':
+      return { ...state, documents: state.documents.filter(d => d.id !== action.payload.id) }
     case 'UPDATE_EMPLOYEE_RESUME':
       return {
         ...state,

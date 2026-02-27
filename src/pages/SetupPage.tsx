@@ -4,7 +4,7 @@ import SetupWizard from '../components/setup/SetupWizard'
 
 export default function SetupPage() {
   return (
-    <div className="min-h-screen" style={{ background: '#FFF8DC' }}>
+    <div className="min-h-screen" style={{ background: '#F0F7FF' }}>
       {/* Simple top bar */}
       <header className="bg-white border-b border-brown-200 px-6 py-4 flex items-center justify-between">
         <Link to="/">

@@ -4,7 +4,7 @@ import { useApp, initialMentors, Employee } from '../../context/AppContext'
 
 interface Props { onClose: () => void }
 
-const COLORS = ['#8B4513', '#A0724A', '#C49A6C', '#D2B48C', '#7A3C10', '#6B3410', '#5C2D0E', '#3E2723']
+const COLORS = ['#2B85DC', '#4EA0EB', '#7DBCF5', '#B3D8FF', '#1F6EC4', '#1558A8', '#0E4290', '#072F70']
 
 const TEAMS = ['Engineering', 'Product', 'Sales', 'Marketing', 'Design', 'Operations', 'Finance', 'Customer Success']
 

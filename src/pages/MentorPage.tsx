@@ -22,10 +22,10 @@ export default function MentorPage() {
   const [active, setActive] = useState('overview')
 
   return (
-    <div className="flex min-h-screen" style={{ background: '#FFF8DC' }}>
+    <div className="flex min-h-screen" style={{ background: '#F0F7FF' }}>
       <aside
         className="flex-shrink-0 flex flex-col border-r border-brown-200 transition-all duration-300"
-        style={{ background: '#F5F5DC', width: collapsed ? 64 : 240 }}
+        style={{ background: '#E0EFFD', width: collapsed ? 64 : 240 }}
       >
         <div className="h-16 flex items-center px-4 border-b border-brown-200">
           {collapsed ? <Logo size="sm" variant="icon" /> : <Logo size="sm" />}

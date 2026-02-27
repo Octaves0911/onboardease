@@ -1,12 +1,13 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import {
   X, Plus, Trash2, Bot, Send, CheckCircle, Sparkles,
-  Link2, FileText, AlertCircle, ChevronDown, ChevronUp, Loader2
+  Link2, FileText, AlertCircle, ChevronDown, ChevronUp, Loader2,
+  ArrowUp, ArrowDown, GripVertical, User, RotateCcw
 } from 'lucide-react'
 import { useApp } from '../../context/AppContext'
 import type { Employee, Task, SubTask, SupportingLink } from '../../context/AppContext'
-import { suggestTasksForEmployee } from '../../services/aiService'
-import type { SuggestedTask } from '../../services/aiService'
+import { sendTaskChatMessage, resetTaskChat } from '../../services/aiService'
+import type { SuggestedTask, TaskChatMessage } from '../../services/aiService'
 
 interface Props {
   employee: Employee
@@ -55,13 +56,15 @@ export default function CreateTaskModal({ employee, onClose }: Props) {
   const [newLinkUrl, setNewLinkUrl]   = useState('')
   const [formError, setFormError]     = useState('')
 
-  // ── AI state ──
-  const [aiPrompt, setAiPrompt]         = useState('')
-  const [aiLoading, setAiLoading]       = useState(false)
-  const [suggestions, setSuggestions]   = useState<SuggestedTask[]>([])
-  const [expanded, setExpanded]         = useState<Record<number, boolean>>({})
-  const [aiError, setAiError]           = useState('')
-  const [aiAsked, setAiAsked]           = useState(false)
+  // ── AI chat state ──
+  const [chatInput,      setChatInput]      = useState('')
+  const [chatHistory,    setChatHistory]    = useState<TaskChatMessage[]>([])
+  const [chatLoading,    setChatLoading]    = useState(false)
+  const [chatError,      setChatError]      = useState('')
+  const [selectedDocIds, setSelectedDocIds] = useState<string[]>([])
+  const [taskPool,       setTaskPool]       = useState<SuggestedTask[]>([])  // all tasks surfaced across messages
+  const [expandedTask,   setExpandedTask]   = useState<Record<number, boolean>>({})
+  const chatBottomRef = useRef<HTMLDivElement>(null)
 
   // ── Manual helpers ──
   const addSubtask = () => {
@@ -118,25 +121,68 @@ export default function CreateTaskModal({ employee, onClose }: Props) {
     onClose()
   }
 
-  // ── AI helpers ──
-  const askAI = async () => {
-    if (!aiPrompt.trim() || aiLoading) return
-    setAiLoading(true)
-    setAiError('')
-    setSuggestions([])
-    setAiAsked(true)
-    try {
-      const docCtx = state.documents.slice(0, 2).map(d => d.content).join(' ')
-      const results = await suggestTasksForEmployee(employee.role, employee.name, aiPrompt.trim(), docCtx)
-      setSuggestions(results)
-      setExpanded(Object.fromEntries(results.map((_, i) => [i, true])))
-    } catch {
-      setAiError('AI suggestion failed. Please try again.')
-    }
-    setAiLoading(false)
+  // ── Reset agent session whenever this modal opens for a new employee ──
+  useEffect(() => {
+    resetTaskChat()
+    return () => { resetTaskChat() }   // also clean up on close
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employee.id])
+
+  // ── AI chat helpers ──
+  const toggleContextDoc = (id: string) =>
+    setSelectedDocIds(prev => prev.includes(id) ? prev.filter(d => d !== id) : [...prev, id])
+
+  useEffect(() => {
+    chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [chatHistory, chatLoading])
+
+  const buildDocContext = () => {
+    const ctxDocs = selectedDocIds.length > 0
+      ? state.documents.filter(d => selectedDocIds.includes(d.id))
+      : state.documents.slice(0, 2)
+    return ctxDocs.map(d => d.content).join(' ')
   }
 
-  const assignSuggestion = (s: SuggestedTask) => {
+  const sendChat = async (text?: string) => {
+    const msg = (text ?? chatInput).trim()
+    if (!msg || chatLoading) return
+    setChatInput('')
+    setChatError('')
+    const userMsg: TaskChatMessage = { role: 'user', content: msg }
+    setChatHistory(prev => [...prev, userMsg])
+    setChatLoading(true)
+    try {
+      const reply = await sendTaskChatMessage(msg, employee.name, employee.role, buildDocContext())
+      setChatHistory(prev => [...prev, reply])
+      if (reply.tasks && reply.tasks.length > 0) {
+        // Merge new tasks into pool (replace all — agent's latest suggestion is authoritative)
+        setTaskPool(reply.tasks)
+        setExpandedTask(Object.fromEntries(reply.tasks.map((_, i) => [i, false])))
+      }
+    } catch {
+      setChatError('Agent failed to respond. Please try again.')
+    }
+    setChatLoading(false)
+  }
+
+  const clearChat = () => {
+    resetTaskChat()
+    setChatHistory([])
+    setTaskPool([])
+    setChatError('')
+    setChatInput('')
+  }
+
+  const moveSuggestion = (idx: number, dir: 'up' | 'down') => {
+    const swap = dir === 'up' ? idx - 1 : idx + 1
+    if (swap < 0 || swap >= taskPool.length) return
+    setTaskPool(prev => { const n = [...prev]; [n[idx], n[swap]] = [n[swap], n[idx]]; return n })
+  }
+
+  const removeSuggestion = (idx: number) =>
+    setTaskPool(prev => prev.filter((_, i) => i !== idx))
+
+  const assignSuggestion = (s: SuggestedTask, order: number) => {
     const task: Task = {
       id: `task-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       title: s.title,
@@ -149,6 +195,7 @@ export default function CreateTaskModal({ employee, onClose }: Props) {
       assignedByName: 'Admin',
       status: 'pending',
       createdAt: new Date().toISOString().split('T')[0],
+      order,
       subtasks: (s.subtasks ?? []).map((st, i) => ({ id: `st-${Date.now()}-${i}`, title: st.title, status: 'pending' as const })),
       requiresInput: s.requiresInput,
       inputPrompt: s.requiresInput ? s.inputPrompt : undefined,
@@ -156,8 +203,13 @@ export default function CreateTaskModal({ employee, onClose }: Props) {
     dispatch({ type: 'ADD_TASK', payload: task })
   }
 
+  const assignOneSuggestion = (idx: number) => {
+    assignSuggestion(taskPool[idx], Date.now() + idx)
+    setTaskPool(prev => prev.filter((_, i) => i !== idx))
+  }
+
   const assignAllSuggestions = () => {
-    suggestions.forEach(s => assignSuggestion(s))
+    taskPool.forEach((s, i) => assignSuggestion(s, Date.now() + i))
     onClose()
   }
 
@@ -352,154 +404,171 @@ export default function CreateTaskModal({ employee, onClose }: Props) {
 
           {/* ──────── AI ASSISTED MODE ──────── */}
           {mode === 'ai' && (
-            <div className="p-6 space-y-5">
-              {/* Prompt */}
-              <div>
-                <label className="block text-xs font-semibold text-brown-600 mb-1.5">What tasks should be created?</label>
-                <div className="flex gap-2">
-                  <textarea
-                    value={aiPrompt}
-                    onChange={e => setAiPrompt(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); askAI() }}}
-                    placeholder={`e.g. "Create 3 technical setup tasks for a new ${employee.role.toLowerCase()}" or "Day 1 compliance checklist"`}
-                    rows={2}
-                    className="input-field text-sm py-2.5 resize-none flex-1"
-                    disabled={aiLoading}
-                  />
-                  <button
-                    onClick={askAI}
-                    disabled={!aiPrompt.trim() || aiLoading}
-                    className="btn-primary px-4 py-2.5 flex items-center gap-2 self-start flex-shrink-0 disabled:opacity-50"
-                  >
-                    {aiLoading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
-                    {aiLoading ? 'Thinking…' : 'Generate'}
-                  </button>
-                </div>
-                <p className="text-xs text-brown-400 mt-1.5">Press Enter or click Generate. AI uses {employee.name}'s role and your company documents as context.</p>
-              </div>
+            <div className="flex flex-col h-full" style={{ minHeight: 0 }}>
 
-              {/* Quick prompts */}
-              <div className="flex flex-wrap gap-2">
-                {[
-                  `3 technical tasks for ${employee.role}`,
-                  'Day 1 onboarding checklist',
-                  'Compliance & policy tasks',
-                  'Tools & access setup',
-                ].map(p => (
-                  <button
-                    key={p}
-                    onClick={() => setAiPrompt(p)}
-                    className="text-xs bg-brown-50 text-brown-600 border border-brown-200 px-3 py-1.5 rounded-full hover:bg-brown-100 transition-colors"
-                  >
-                    {p}
-                  </button>
-                ))}
-              </div>
-
-              {aiError && (
-                <div className="flex items-center gap-2 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                  <AlertCircle size={13} />{aiError}
+              {/* ── Document context bar (collapsible top strip) ── */}
+              {state.documents.length > 0 && (
+                <div className="px-4 pt-3 pb-2 border-b border-brown-100 bg-brown-50/60 flex-shrink-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-semibold text-brown-500 flex items-center gap-1"><FileText size={11} />Context docs:</span>
+                    {state.documents.map(doc => (
+                      <label key={doc.id} className={`flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full border cursor-pointer transition-colors ${selectedDocIds.includes(doc.id) ? 'bg-brown-700 text-white border-brown-700' : 'bg-white text-brown-500 border-brown-200 hover:border-brown-400'}`}>
+                        <input type="checkbox" checked={selectedDocIds.includes(doc.id)} onChange={() => toggleContextDoc(doc.id)} className="hidden" />
+                        {doc.name.slice(0, 18)}{doc.name.length > 18 ? '…' : ''}
+                      </label>
+                    ))}
+                    {selectedDocIds.length === 0 && <span className="text-xs text-brown-400 italic">none selected — using general context</span>}
+                  </div>
                 </div>
               )}
 
-              {/* Loading skeleton */}
-              {aiLoading && (
-                <div className="space-y-3">
-                  {[1, 2, 3].map(i => (
-                    <div key={i} className="card animate-pulse">
-                      <div className="h-4 bg-brown-100 rounded w-3/4 mb-2" />
-                      <div className="h-3 bg-brown-50 rounded w-full mb-1" />
-                      <div className="h-3 bg-brown-50 rounded w-2/3" />
+              {/* ── Chat message area ── */}
+              <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4" style={{ minHeight: 0, maxHeight: '320px' }}>
+                {/* Welcome state */}
+                {chatHistory.length === 0 && (
+                  <div className="space-y-4">
+                    <div className="flex gap-2.5 items-start">
+                      <div className="w-7 h-7 rounded-full bg-gradient-to-br from-brown-600 to-brown-900 flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <Bot size={13} className="text-white" />
+                      </div>
+                      <div className="bg-brown-50 border border-brown-100 rounded-2xl rounded-tl-sm px-3.5 py-2.5 max-w-[88%]">
+                        <p className="text-xs text-brown-700 leading-relaxed">
+                          Hi! I'm the onboarding agent. Tell me what tasks to create for <strong>{employee.name}</strong> ({employee.role}) and I'll generate a structured list. You can ask me to refine, add more, or change priorities at any time.
+                        </p>
+                      </div>
                     </div>
-                  ))}
-                </div>
-              )}
+                    <div className="flex flex-wrap gap-2 pl-9">
+                      {[
+                        `Day 1 setup tasks for a ${employee.role}`,
+                        'Create a compliance checklist',
+                        `3 high-priority tasks for ${employee.team} onboarding`,
+                        'Tools & access setup tasks',
+                      ].map(p => (
+                        <button key={p} onClick={() => sendChat(p)} className="text-xs bg-white text-brown-600 border border-brown-200 px-3 py-1.5 rounded-full hover:bg-brown-50 hover:border-brown-400 transition-colors">
+                          {p}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
-              {/* Suggestions */}
-              {suggestions.length > 0 && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-bold text-brown-900">{suggestions.length} tasks suggested</p>
-                    <button
-                      onClick={assignAllSuggestions}
-                      className="btn-primary text-xs py-2 px-4 flex items-center gap-1.5"
-                    >
-                      <Plus size={13} /> Assign All to {employee.name.split(' ')[0]}
+                {/* Messages */}
+                {chatHistory.map((msg, i) => (
+                  <div key={i} className={`flex gap-2.5 items-start ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${msg.role === 'agent' ? 'bg-gradient-to-br from-brown-600 to-brown-900' : 'bg-gradient-to-br from-blue-500 to-blue-700'}`}>
+                      {msg.role === 'agent' ? <Bot size={13} className="text-white" /> : <User size={13} className="text-white" />}
+                    </div>
+                    <div className={`max-w-[85%] space-y-1 ${msg.role === 'user' ? 'items-end flex flex-col' : ''}`}>
+                      <div className={`px-3.5 py-2.5 rounded-2xl text-xs leading-relaxed ${msg.role === 'user' ? 'bg-brown-700 text-white rounded-tr-sm' : 'bg-brown-50 border border-brown-100 text-brown-700 rounded-tl-sm'}`}>
+                        {/* Strip JSON array from displayed text */}
+                        {msg.content.replace(/\[[\s\S]*?\]/, '').trim() || (msg.tasks ? 'Here are the suggested tasks:' : msg.content)}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                {/* Typing indicator */}
+                {chatLoading && (
+                  <div className="flex gap-2.5 items-start">
+                    <div className="w-7 h-7 rounded-full bg-gradient-to-br from-brown-600 to-brown-900 flex items-center justify-center flex-shrink-0">
+                      <Bot size={13} className="text-white" />
+                    </div>
+                    <div className="bg-brown-50 border border-brown-100 rounded-2xl rounded-tl-sm px-3.5 py-2.5 flex items-center gap-1.5">
+                      <Loader2 size={12} className="text-brown-400 animate-spin" />
+                      <span className="text-xs text-brown-400">Agent is thinking…</span>
+                    </div>
+                  </div>
+                )}
+                <div ref={chatBottomRef} />
+              </div>
+
+              {/* ── Task pool (latest suggestions from agent) ── */}
+              {taskPool.length > 0 && (
+                <div className="border-t border-brown-100 px-4 py-3 bg-white flex-shrink-0" style={{ maxHeight: '260px', overflowY: 'auto' }}>
+                  <div className="flex items-center justify-between mb-2.5">
+                    <p className="text-xs font-bold text-brown-800 flex items-center gap-1.5">
+                      <Sparkles size={12} className="text-brown-500" />
+                      {taskPool.length} task{taskPool.length !== 1 ? 's' : ''} suggested — review &amp; assign
+                    </p>
+                    <button onClick={assignAllSuggestions} className="btn-primary text-xs py-1 px-3 flex items-center gap-1">
+                      <Plus size={11} /> Assign All
                     </button>
                   </div>
-                  {suggestions.map((s, i) => (
-                    <div key={i} className="card border border-brown-200">
-                      {/* Task header */}
-                      <div className="flex items-start justify-between gap-3 mb-2">
+                  <div className="space-y-1.5">
+                    {taskPool.map((s, i) => (
+                      <div key={i} className="flex items-center gap-2 border border-brown-100 rounded-xl px-3 py-2 bg-brown-50/40">
+                        <div className="flex flex-col gap-0.5 flex-shrink-0">
+                          <button onClick={() => moveSuggestion(i, 'up')} disabled={i === 0} className="p-0.5 text-brown-300 hover:text-brown-600 disabled:opacity-20"><ArrowUp size={11} /></button>
+                          <button onClick={() => moveSuggestion(i, 'down')} disabled={i === taskPool.length - 1} className="p-0.5 text-brown-300 hover:text-brown-600 disabled:opacity-20"><ArrowDown size={11} /></button>
+                        </div>
+                        <GripVertical size={12} className="text-brown-200 flex-shrink-0" />
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <p className="font-semibold text-brown-900 text-sm">{s.title}</p>
-                            {s.priority && (
-                              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${PRIORITIES.find(p => p.value === s.priority)?.color ?? ''}`}>
-                                {s.priority}
-                              </span>
-                            )}
-                            {s.requiresInput && (
-                              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200 flex items-center gap-1">
-                                <AlertCircle size={10} /> Requires input
-                              </span>
-                            )}
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-xs font-bold text-brown-400">#{i + 1}</span>
+                            <p className="text-xs font-semibold text-brown-800 truncate">{s.title}</p>
+                            {s.priority && <span className={`text-xs px-1.5 py-0.5 rounded-full border font-medium flex-shrink-0 ${PRIORITIES.find(p => p.value === s.priority)?.color ?? ''}`}>{s.priority}</span>}
+                            {s.requiresInput && <span className="text-xs px-1.5 py-0.5 rounded-full bg-purple-50 text-purple-600 border border-purple-100 flex-shrink-0 flex items-center gap-0.5"><AlertCircle size={9} />Input</span>}
                           </div>
-                          <p className="text-xs text-brown-500 mt-0.5">{s.category} · {s.estimatedTime}</p>
+                          <p className="text-xs text-brown-400">{s.category} · {s.estimatedTime}{(s.subtasks?.length ?? 0) > 0 ? ` · ${s.subtasks!.length} subtasks` : ''}</p>
                         </div>
-                        <div className="flex items-center gap-1.5 flex-shrink-0">
-                          <button
-                            onClick={() => setExpanded(ex => ({ ...ex, [i]: !ex[i] }))}
-                            className="p-1.5 rounded-lg hover:bg-brown-50 text-brown-400"
-                          >
-                            {expanded[i] ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                          </button>
-                          <button
-                            onClick={() => { assignSuggestion(s); setSuggestions(prev => prev.filter((_, idx) => idx !== i)) }}
-                            className="btn-primary text-xs py-1.5 px-3 flex items-center gap-1"
-                          >
-                            <Plus size={12} /> Assign
-                          </button>
-                        </div>
+                        <button onClick={() => setExpandedTask(ex => ({ ...ex, [i]: !ex[i] }))} className="p-1 rounded text-brown-300 hover:text-brown-600 flex-shrink-0">
+                          {expandedTask[i] ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                        </button>
+                        <button onClick={() => removeSuggestion(i)} className="p-1 rounded text-red-300 hover:text-red-600 hover:bg-red-50 flex-shrink-0"><Trash2 size={12} /></button>
+                        <button onClick={() => assignOneSuggestion(i)} className="btn-primary text-xs py-1 px-2.5 flex items-center gap-1 flex-shrink-0"><Plus size={11} />Assign</button>
                       </div>
-
-                      {expanded[i] && (
-                        <div className="space-y-3 border-t border-brown-100 pt-3 mt-1">
-                          <p className="text-xs text-brown-600 leading-relaxed">{s.description}</p>
-
-                          {s.subtasks && s.subtasks.length > 0 && (
-                            <div>
-                              <p className="text-xs font-semibold text-brown-500 mb-1.5">Subtasks ({s.subtasks.length})</p>
-                              <div className="space-y-1">
-                                {s.subtasks.map((st, j) => (
-                                  <div key={j} className="flex items-center gap-2 text-xs text-brown-600">
-                                    <div className="w-2.5 h-2.5 rounded-full border-2 border-brown-300 flex-shrink-0" />
-                                    {st.title}
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-
-                          {s.requiresInput && s.inputPrompt && (
-                            <div className="bg-purple-50 border border-purple-100 rounded-lg px-3 py-2">
-                              <p className="text-xs font-semibold text-purple-700 mb-0.5 flex items-center gap-1"><AlertCircle size={11} />Employee Input Required</p>
-                              <p className="text-xs text-purple-600">{s.inputPrompt}</p>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                    ))}
+                    {/* Expanded subtask/input detail */}
+                    {taskPool.map((s, i) => expandedTask[i] && (
+                      <div key={`exp-${i}`} className="ml-10 mr-2 bg-white border border-brown-100 rounded-xl p-3 space-y-2">
+                        <p className="text-xs text-brown-600">{s.description}</p>
+                        {(s.subtasks?.length ?? 0) > 0 && (
+                          <div className="space-y-1">
+                            {s.subtasks!.map((st, j) => <div key={j} className="flex items-center gap-1.5 text-xs text-brown-500"><div className="w-2 h-2 rounded-full border-2 border-brown-300 flex-shrink-0" />{st.title}</div>)}
+                          </div>
+                        )}
+                        {s.requiresInput && s.inputPrompt && (
+                          <div className="bg-purple-50 border border-purple-100 rounded-lg px-2.5 py-1.5">
+                            <p className="text-xs font-semibold text-purple-700 flex items-center gap-1 mb-0.5"><AlertCircle size={10} />Input prompt</p>
+                            <p className="text-xs text-purple-600">{s.inputPrompt}</p>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 
-              {aiAsked && !aiLoading && suggestions.length === 0 && !aiError && (
-                <div className="text-center py-8 text-brown-400">
-                  <Bot size={28} className="mx-auto mb-2 opacity-50" />
-                  <p className="text-sm">No suggestions generated. Try a different prompt.</p>
+              {chatError && (
+                <div className="mx-4 mb-2 flex items-center gap-2 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex-shrink-0">
+                  <AlertCircle size={13} />{chatError}
                 </div>
               )}
+
+              {/* ── Chat input ── */}
+              <div className="px-4 py-3 border-t border-brown-100 flex gap-2 items-center flex-shrink-0">
+                {chatHistory.length > 0 && (
+                  <button onClick={clearChat} title="Reset conversation" className="p-2 rounded-lg text-brown-300 hover:text-brown-600 hover:bg-brown-50 transition-colors flex-shrink-0">
+                    <RotateCcw size={14} />
+                  </button>
+                )}
+                <input
+                  type="text"
+                  value={chatInput}
+                  onChange={e => setChatInput(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendChat()}
+                  placeholder={chatHistory.length === 0 ? `Describe tasks for ${employee.name}…` : 'Ask to refine, add more, change priority…'}
+                  disabled={chatLoading}
+                  className="flex-1 text-xs bg-brown-50 border border-brown-200 rounded-xl px-3 py-2.5 outline-none focus:border-brown-500 transition-colors disabled:opacity-50 text-brown-800 placeholder-brown-400"
+                />
+                <button
+                  onClick={() => sendChat()}
+                  disabled={!chatInput.trim() || chatLoading}
+                  className="w-9 h-9 rounded-xl bg-brown-700 hover:bg-brown-900 disabled:opacity-40 flex items-center justify-center flex-shrink-0 transition-colors"
+                >
+                  {chatLoading ? <Loader2 size={14} className="text-white animate-spin" /> : <Send size={14} className="text-white" />}
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -512,9 +581,9 @@ export default function CreateTaskModal({ employee, onClose }: Props) {
               <Plus size={15} /> Create Task
             </button>
           )}
-          {mode === 'ai' && suggestions.length > 0 && (
+          {mode === 'ai' && taskPool.length > 0 && (
             <button onClick={assignAllSuggestions} className="flex-1 btn-primary py-2.5 text-sm flex items-center justify-center gap-2">
-              <Sparkles size={15} /> Assign All ({suggestions.length})
+              <Sparkles size={15} /> Assign All ({taskPool.length})
             </button>
           )}
         </div>
