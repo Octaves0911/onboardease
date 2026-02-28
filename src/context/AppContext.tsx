@@ -89,6 +89,17 @@ export interface MentorUser {
   color: string
 }
 
+export interface ScheduledMeeting {
+  id: string
+  menteeId: string
+  mentorId: string
+  title: string
+  date: string
+  time: string
+  type: '1:1' | 'check-in' | 'review'
+  notes: string
+}
+
 export interface Notification {
   id: string
   type: 'task_assigned' | 'employee_added' | 'employee_removed'
@@ -134,6 +145,7 @@ interface AppState {
   notifications: Notification[]
   conversations: ChatConversation[]
   chatMessages: ChatMessage[]
+  meetings: ScheduledMeeting[]
 }
 
 type Action =
@@ -162,6 +174,8 @@ type Action =
   | { type: 'CREATE_CONVERSATION'; payload: ChatConversation }
   | { type: 'ADD_CHAT_MESSAGE'; payload: ChatMessage }
   | { type: 'MARK_CHAT_READ'; payload: { conversationId: string; userId: string } }
+  | { type: 'ADD_MEETING'; payload: ScheduledMeeting }
+  | { type: 'REMOVE_MEETING'; payload: { id: string } }
 
 // ─── Initial Data ─────────────────────────────────────────────────────────────
 
@@ -220,6 +234,7 @@ function saveState(state: AppState) {
       chatMessages: state.chatMessages.map(({ fileData: _fd, ...m }) => m),
       // Strip fileData (binary) before persisting to avoid bloating localStorage
       documents: state.documents.map(({ fileData: _fd, ...d }) => d),
+      meetings: state.meetings,
     }))
   } catch {}
 }
@@ -407,6 +422,10 @@ function reducer(state: AppState, action: Action): AppState {
             : c
         ),
       }
+    case 'ADD_MEETING':
+      return { ...state, meetings: [...state.meetings, action.payload] }
+    case 'REMOVE_MEETING':
+      return { ...state, meetings: state.meetings.filter(m => m.id !== action.payload.id) }
     case 'MARK_CHAT_READ':
       return {
         ...state,
@@ -450,6 +469,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     notifications: (persisted as any).notifications ?? [],
     conversations: (persisted as any).conversations ?? [],
     chatMessages:  (persisted as any).chatMessages  ?? [],
+    meetings:      (persisted as any).meetings       ?? [],
   }
   const [state, dispatch] = useReducer(reducer, initialState)
 

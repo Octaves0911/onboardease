@@ -5,7 +5,7 @@ import {
   BarChart3, Settings, Bell, Trash2, ChevronRight,
   Edit3, Save, Star, BookOpen, Search, Eye, Upload, FlaskConical
 } from 'lucide-react'
-import { useApp, initialMentors, Employee, Task } from '../../context/AppContext'
+import { useApp, initialMentors, Employee, Task, ScheduledMeeting } from '../../context/AppContext'
 import type { Document } from '../../context/AppContext'
 import { generateTasksFromResume, parseTasksFromResponse, ParsedTask } from '../../services/aiService'
 import AssignTaskModal from '../modals/AssignTaskModal'
@@ -926,11 +926,12 @@ function DocumentsSection({ currentMentorId }: { currentMentorId: string }) {
 
 // ─── ScheduleSection ──────────────────────────────────────────────────────────
 
-function ScheduleSection({ myMentees, meetings, setMeetings }: {
+function ScheduleSection({ myMentees, meetings, currentMentorId }: {
   myMentees: Employee[]
-  meetings: Meeting[]
-  setMeetings: React.Dispatch<React.SetStateAction<Meeting[]>>
+  meetings: ScheduledMeeting[]
+  currentMentorId: string
 }) {
+  const { dispatch } = useApp()
   const [showModal,    setShowModal]    = useState(false)
   const [filterMentee, setFilterMentee] = useState<string>('all')
 
@@ -979,7 +980,7 @@ function ScheduleSection({ myMentees, meetings, setMeetings }: {
                   {mtg.notes && <p className="text-xs text-brown-400 mt-0.5 line-clamp-1">{mtg.notes}</p>}
                 </div>
                 <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border flex-shrink-0 ${typeBadge[mtg.type]}`}>{mtg.type}</span>
-                <button onClick={() => setMeetings(prev => prev.filter(x => x.id !== mtg.id))} className="p-1.5 rounded-lg text-brown-300 hover:bg-red-50 hover:text-red-500 transition-colors"><Trash2 size={14} /></button>
+                <button onClick={() => dispatch({ type: 'REMOVE_MEETING', payload: { id: mtg.id } })} className="p-1.5 rounded-lg text-brown-300 hover:bg-red-50 hover:text-red-500 transition-colors"><Trash2 size={14} /></button>
               </div>
             )
           })
@@ -996,14 +997,14 @@ function ScheduleSection({ myMentees, meetings, setMeetings }: {
                 <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0" style={{ background: mentee?.color ?? '#0D9488' }}>{mentee?.initials ?? '?'}</div>
                 <div className="flex-1 min-w-0"><p className="font-semibold text-brown-900">{mtg.title}</p><p className="text-xs text-brown-500">{mentee?.name ?? 'Unknown'} · {fmtDate(mtg.date)} at {mtg.time}</p></div>
                 <span className="text-xs font-semibold px-2.5 py-1 rounded-full border bg-brown-100 text-brown-500 border-brown-200 flex-shrink-0">{mtg.type}</span>
-                <button onClick={() => setMeetings(prev => prev.filter(x => x.id !== mtg.id))} className="p-1.5 rounded-lg text-brown-300 hover:bg-red-50 hover:text-red-500 transition-colors"><Trash2 size={14} /></button>
+                <button onClick={() => dispatch({ type: 'REMOVE_MEETING', payload: { id: mtg.id } })} className="p-1.5 rounded-lg text-brown-300 hover:bg-red-50 hover:text-red-500 transition-colors"><Trash2 size={14} /></button>
               </div>
             )
           })}
         </div>
       )}
 
-      {showModal && <ScheduleMeetingModal preselectedMentee={null} mentees={myMentees} onClose={() => setShowModal(false)} onSave={m => setMeetings(prev => [...prev, m])} />}
+      {showModal && <ScheduleMeetingModal preselectedMentee={null} mentees={myMentees} onClose={() => setShowModal(false)} onSave={m => dispatch({ type: 'ADD_MEETING', payload: { ...m, mentorId: currentMentorId } })} />}
     </div>
   )
 }
@@ -1150,7 +1151,7 @@ export default function MentorDashboard({
   activeSection: string
   mentorId?: string
 }) {
-  const { state }     = useApp()
+  const { state, dispatch } = useApp()
   // Use URL mentorId as fallback for the brief render before SET_ROLE fires on reload
   const effectiveId   = state.currentUserId || propMentorId || ''
   const currentMentor = initialMentors.find(m => m.id === effectiveId) ?? initialMentors[0]
@@ -1164,12 +1165,8 @@ export default function MentorDashboard({
   const [showSchedModal,    setShowSchedModal]    = useState(false)
   const [createTaskMentee,  setCreateTaskMentee]  = useState<Employee | null>(null)
 
-  const [meetings, setMeetings] = useState<Meeting[]>(() =>
-    myMentees.slice(0, 3).flatMap((m, i) => [
-      { id: `mtg-init-${i}a`, menteeId: m.id, title: 'Weekly 1:1',  date: dayOffset(i + 1), time: '10:00', type: '1:1'      as const, notes: '' },
-      { id: `mtg-init-${i}b`, menteeId: m.id, title: 'Check-in',    date: dayOffset(i + 7), time: '14:00', type: 'check-in' as const, notes: 'Review onboarding progress' },
-    ])
-  )
+  // Use global meetings filtered by this mentor
+  const meetings = state.meetings.filter(m => m.mentorId === currentMentor.id)
 
   const renderSection = () => {
     switch (activeSection) {
@@ -1178,7 +1175,7 @@ export default function MentorDashboard({
       case 'docs':
         return <DocumentsSection currentMentorId={currentMentor.id} />
       case 'schedule':
-        return <ScheduleSection myMentees={myMentees} meetings={meetings} setMeetings={setMeetings} />
+        return <ScheduleSection myMentees={myMentees} meetings={meetings} currentMentorId={currentMentor.id} />
       case 'settings':
         return <SettingsSection currentMentor={currentMentor} />
       default:
@@ -1217,7 +1214,7 @@ export default function MentorDashboard({
           preselectedMentee={scheduleMentee}
           mentees={myMentees}
           onClose={() => { setShowSchedModal(false); setScheduleMentee(null) }}
-          onSave={m => setMeetings(prev => [...prev, m])}
+          onSave={m => dispatch({ type: 'ADD_MEETING', payload: { ...m, mentorId: currentMentor.id } })}
         />
       )}
 
