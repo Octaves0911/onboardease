@@ -3,11 +3,12 @@ import { useState as useLocalState } from 'react'
 import {
   X, Mail, Users, Calendar, TrendingUp, CheckCircle, Clock,
   AlertCircle, FileText, Trash2, Plus, ChevronDown, ChevronUp,
-  Link2, ArrowUp, ArrowDown, GripVertical, MessageSquare, Eye, Send
+  Link2, ArrowUp, ArrowDown, GripVertical, MessageSquare, Eye, Send, Edit3
 } from 'lucide-react'
 import { useApp, initialMentors } from '../../context/AppContext'
 import type { Employee, Task, TaskFeedback, FeedbackVisibility } from '../../context/AppContext'
 import CreateTaskModal from './CreateTaskModal'
+import EditTaskModal from './EditTaskModal'
 
 interface Props {
   employee: Employee
@@ -38,6 +39,7 @@ export default function EmployeeDetailModal({ employee, onClose }: Props) {
   const { state, dispatch } = useApp()
   const [showConfirm,       setShowConfirm]       = useState(false)
   const [showCreateTask,    setShowCreateTask]    = useState(false)
+  const [editingTask,       setEditingTask]       = useState<Task | null>(null)
   const [expandedTask,      setExpandedTask]      = useState<Record<string, boolean>>({})
   const [confirmRemoveTask, setConfirmRemoveTask] = useState<string | null>(null)
   // Feedback state per task
@@ -48,7 +50,14 @@ export default function EmployeeDetailModal({ employee, onClose }: Props) {
   const currentRole = (state.currentRole ?? 'admin') as FeedbackVisibility
   const currentName = currentRole === 'admin' ? 'Admin'
     : currentRole === 'hr' ? 'HR Manager'
-    : initialMentors.find(m => m.id === state.currentUserId)?.name ?? 'Mentor'
+    : ([...initialMentors, ...state.mentors].find(m => m.id === state.currentUserId)?.name ?? 'Mentor')
+
+  // Returns true if the current logged-in user created this task
+  const canEdit = (task: Task): boolean => {
+    if (currentRole !== task.assignedBy) return false
+    if (currentRole === 'mentor') return task.assignedByName === currentName
+    return true
+  }
 
   const toggleVisibility = (taskId: string, role: FeedbackVisibility) => {
     setFeedbackVis(prev => {
@@ -316,18 +325,31 @@ export default function EmployeeDetailModal({ employee, onClose }: Props) {
                           </button>
                         )}
 
-                        {/* Delete button */}
-                        <button
-                          onClick={() => setConfirmRemoveTask(isPendingRemove ? null : task.id)}
-                          title="Remove task"
-                          className={`p-1 rounded flex-shrink-0 transition-colors ${isPendingRemove ? 'text-red-600 bg-red-50' : 'text-red-300 hover:text-red-600 hover:bg-red-50'}`}
-                        >
-                          <Trash2 size={13} />
-                        </button>
+                        {/* Edit button — only for task creator */}
+                        {canEdit(task) && (
+                          <button
+                            onClick={() => setEditingTask(task)}
+                            title="Edit task"
+                            className="p-1 rounded flex-shrink-0 transition-colors text-brown-300 hover:text-brown-600 hover:bg-brown-50"
+                          >
+                            <Edit3 size={13} />
+                          </button>
+                        )}
+
+                        {/* Delete button — only for task creator */}
+                        {canEdit(task) && (
+                          <button
+                            onClick={() => setConfirmRemoveTask(isPendingRemove ? null : task.id)}
+                            title="Remove task"
+                            className={`p-1 rounded flex-shrink-0 transition-colors ${isPendingRemove ? 'text-red-600 bg-red-50' : 'text-red-300 hover:text-red-600 hover:bg-red-50'}`}
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        )}
                       </div>
 
-                      {/* Remove confirmation inline */}
-                      {isPendingRemove && (
+                      {/* Remove confirmation inline — only for task creator */}
+                      {isPendingRemove && canEdit(task) && (
                         <div className="bg-red-50 border-t border-red-200 px-4 py-2.5 flex items-center justify-between gap-3">
                           <p className="text-xs text-red-700 font-medium">Remove this task? This cannot be undone.</p>
                           <div className="flex gap-2 flex-shrink-0">
@@ -514,6 +536,9 @@ export default function EmployeeDetailModal({ employee, onClose }: Props) {
 
     {showCreateTask && (
       <CreateTaskModal employee={employee} assignedBy={currentRole as 'admin' | 'hr' | 'mentor'} assignedByName={currentName} onClose={() => setShowCreateTask(false)} />
+    )}
+    {editingTask && (
+      <EditTaskModal task={editingTask} onClose={() => setEditingTask(null)} />
     )}
     </>
   )
