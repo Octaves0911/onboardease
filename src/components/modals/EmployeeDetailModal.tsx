@@ -87,8 +87,8 @@ export default function EmployeeDetailModal({ employee, onClose }: Props) {
   const rate    = myTasks.length > 0 ? Math.round((done.length / myTasks.length) * 100) : 0
 
   const cycleStatus = (task: Task) => {
-    // Only the task creator can revert a "done" task back to in-progress
-    if (task.status === 'done' && currentRole !== task.assignedBy) return
+    // Only the task creator can change status in the management view
+    if (currentRole !== task.assignedBy) return
     const idx  = STATUS_CYCLE.indexOf(task.status)
     const next = STATUS_CYCLE[(idx + 1) % STATUS_CYCLE.length]
     dispatch({ type: 'UPDATE_TASK', payload: { id: task.id, updates: { status: next } } })
@@ -295,9 +295,9 @@ export default function EmployeeDetailModal({ employee, onClose }: Props) {
                         {/* Status chip — click to cycle; only creator can undo done */}
                         <button
                           onClick={() => cycleStatus(task)}
-                          title={task.status === 'done' && currentRole !== task.assignedBy ? `Only ${task.assignedByName} can revert this task` : 'Click to change status'}
-                          disabled={task.status === 'done' && currentRole !== task.assignedBy}
-                          className={`text-xs font-semibold px-2 py-1 rounded-full border flex-shrink-0 transition-colors flex items-center gap-1 ${st.chip} ${task.status === 'done' && currentRole !== task.assignedBy ? 'opacity-60 cursor-not-allowed' : ''}`}
+                          title={currentRole !== task.assignedBy ? `Only ${task.assignedByName} can change this status` : 'Click to change status'}
+                          disabled={currentRole !== task.assignedBy}
+                          className={`text-xs font-semibold px-2 py-1 rounded-full border flex-shrink-0 transition-colors flex items-center gap-1 ${st.chip} ${currentRole !== task.assignedBy ? 'opacity-50 cursor-not-allowed' : ''}`}
                         >
                           {st.icon}
                           <span>{st.label}</span>
