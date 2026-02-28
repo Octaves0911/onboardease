@@ -63,19 +63,35 @@ export default function Navbar({ variant = 'landing', title, onProfileClick }: N
 
           <div className="flex items-center gap-2">
 
-            {/* Notifications — HR sees admin-sourced events */}
+            {/* Notifications — HR sees global events; Mentor sees mentee-assignment events */}
             {(() => {
-              const isHR = state.currentRole === 'hr'
-              const hrNotifs = isHR ? state.notifications : []
-              const unread = hrNotifs.filter(n => !n.read).length
+              const isHR     = state.currentRole === 'hr'
+              const isMentor = state.currentRole === 'mentor'
+              const mentorId = state.currentUserId
+
+              // HR: all notifications without a mentorId scope
+              // Mentor: only notifications scoped to their mentorId
+              const visibleNotifs = isHR
+                ? state.notifications.filter(n => !n.mentorId)
+                : isMentor
+                  ? state.notifications.filter(n => n.mentorId === mentorId)
+                  : []
+
+              const unread = visibleNotifs.filter(n => !n.read).length
+
+              const handleOpen = () => {
+                setNotifOpen(!notifOpen)
+                setProfileOpen(false)
+                if (!notifOpen && unread > 0) {
+                  if (isHR)     dispatch({ type: 'MARK_NOTIFICATIONS_READ' })
+                  if (isMentor && mentorId) dispatch({ type: 'MARK_MENTOR_NOTIFICATIONS_READ', payload: { mentorId } })
+                }
+              }
+
               return (
                 <div className="relative" ref={notifRef}>
                   <button
-                    onClick={() => {
-                      setNotifOpen(!notifOpen)
-                      setProfileOpen(false)
-                      if (!notifOpen && isHR && unread > 0) dispatch({ type: 'MARK_NOTIFICATIONS_READ' })
-                    }}
+                    onClick={handleOpen}
                     className="relative p-2 rounded-lg hover:bg-brown-100 transition-colors text-brown-600"
                   >
                     <Bell size={20} />
@@ -91,7 +107,7 @@ export default function Navbar({ variant = 'landing', title, onProfileClick }: N
                         <p className="font-bold text-brown-900 text-sm">Notifications</p>
                         <span className="text-xs text-brown-400">{unread} new</span>
                       </div>
-                      {hrNotifs.length === 0 ? (
+                      {visibleNotifs.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-10 text-brown-400">
                           <Bell size={28} className="mb-2 opacity-30" />
                           <p className="text-sm font-medium">No notifications yet</p>
@@ -99,7 +115,7 @@ export default function Navbar({ variant = 'landing', title, onProfileClick }: N
                         </div>
                       ) : (
                         <div className="max-h-72 overflow-y-auto divide-y divide-brown-50">
-                          {[...hrNotifs].reverse().map(n => (
+                          {[...visibleNotifs].reverse().map(n => (
                             <div key={n.id} className={`px-4 py-3 flex items-start gap-3 ${n.read ? 'opacity-60' : ''}`}>
                               <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-sm
                                 ${n.type === 'employee_added' ? 'bg-green-100 text-green-700' :

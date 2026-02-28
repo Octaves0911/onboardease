@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { AppProvider } from './context/AppContext'
 import LandingPage from './pages/LandingPage'
 import LoginPage   from './pages/LoginPage'
@@ -13,13 +13,16 @@ function App() {
     <AppProvider>
       <Router>
         <Routes>
-          <Route path="/"         element={<LandingPage />} />
-          <Route path="/login"    element={<LoginPage />} />
-          <Route path="/setup"    element={<SetupPage />} />
-          <Route path="/new-hire" element={<NewHirePage />} />
-          <Route path="/mentor"   element={<MentorPage />} />
-          <Route path="/admin"    element={<AdminPage />} />
-          <Route path="/hr"       element={<HRPage />} />
+          <Route path="/"                    element={<LandingPage />} />
+          <Route path="/login"               element={<LoginPage />} />
+          <Route path="/setup"               element={<SetupPage />} />
+          <Route path="/new-hire"            element={<NewHirePage />} />
+          {/* Parameterised route — mentorId in URL survives reloads */}
+          <Route path="/mentor/:mentorId"    element={<MentorPage />} />
+          {/* Old bare /mentor redirects to login so users pick a mentor */}
+          <Route path="/mentor"              element={<Navigate to="/login" replace />} />
+          <Route path="/admin"               element={<AdminPage />} />
+          <Route path="/hr"                  element={<HRPage />} />
         </Routes>
       </Router>
     </AppProvider>

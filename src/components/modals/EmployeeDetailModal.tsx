@@ -513,7 +513,7 @@ export default function EmployeeDetailModal({ employee, onClose }: Props) {
     </div>
 
     {showCreateTask && (
-      <CreateTaskModal employee={employee} onClose={() => setShowCreateTask(false)} />
+      <CreateTaskModal employee={employee} assignedBy={currentRole as 'admin' | 'hr' | 'mentor'} assignedByName={currentName} onClose={() => setShowCreateTask(false)} />
     )}
     </>
   )
