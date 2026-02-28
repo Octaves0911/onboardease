@@ -96,6 +96,32 @@ export interface Notification {
   read: boolean
 }
 
+// ─── Chat ────────────────────────────────────────────────────────────────────
+
+export interface ChatMessage {
+  id: string
+  conversationId: string
+  senderId: string
+  senderName: string
+  senderRole: string
+  content: string
+  type: 'text' | 'image' | 'file'
+  fileName?: string
+  fileData?: string   // base64 (not persisted)
+  fileType?: string
+  createdAt: string
+  readBy: string[]    // list of user ids who read this
+}
+
+export interface ChatConversation {
+  id: string
+  name?: string           // group name; undefined for direct
+  type: 'direct' | 'group'
+  participants: string[]  // user ids
+  createdAt: string
+  lastMessageAt?: string
+}
+
 interface AppState {
   currentRole: 'admin' | 'hr' | 'mentor' | 'employee' | null
   currentUserId: string | null
@@ -104,6 +130,8 @@ interface AppState {
   documents: Document[]
   mentors: MentorUser[]
   notifications: Notification[]
+  conversations: ChatConversation[]
+  chatMessages: ChatMessage[]
 }
 
 type Action =
@@ -127,6 +155,9 @@ type Action =
   | { type: 'MARK_NOTIFICATIONS_READ' }
   | { type: 'ADD_TASK_FEEDBACK'; payload: { taskId: string; feedback: TaskFeedback } }
   | { type: 'UPDATE_EMPLOYEE_BIO'; payload: { id: string; bio: string } }
+  | { type: 'CREATE_CONVERSATION'; payload: ChatConversation }
+  | { type: 'ADD_CHAT_MESSAGE'; payload: ChatMessage }
+  | { type: 'MARK_CHAT_READ'; payload: { conversationId: string; userId: string } }
 
 // ─── Initial Data ─────────────────────────────────────────────────────────────
 
@@ -180,6 +211,9 @@ function saveState(state: AppState) {
       tasks: state.tasks,
       mentors:  state.mentors,
       notifications: state.notifications,
+      conversations: state.conversations,
+      // Strip fileData from chat messages before persisting
+      chatMessages: state.chatMessages.map(({ fileData: _fd, ...m }) => m),
       // Strip fileData (binary) before persisting to avoid bloating localStorage
       documents: state.documents.map(({ fileData: _fd, ...d }) => d),
     }))
@@ -329,6 +363,28 @@ function reducer(state: AppState, action: Action): AppState {
           e.id === action.payload.id ? { ...e, bio: action.payload.bio } : e
         ),
       }
+    case 'CREATE_CONVERSATION':
+      return { ...state, conversations: [...state.conversations, action.payload] }
+    case 'ADD_CHAT_MESSAGE':
+      return {
+        ...state,
+        chatMessages: [...state.chatMessages, action.payload],
+        conversations: state.conversations.map(c =>
+          c.id === action.payload.conversationId
+            ? { ...c, lastMessageAt: action.payload.createdAt }
+            : c
+        ),
+      }
+    case 'MARK_CHAT_READ':
+      return {
+        ...state,
+        chatMessages: state.chatMessages.map(m =>
+          m.conversationId === action.payload.conversationId &&
+          !m.readBy.includes(action.payload.userId)
+            ? { ...m, readBy: [...m.readBy, action.payload.userId] }
+            : m
+        ),
+      }
     case 'UPDATE_EMPLOYEE_RESUME':
       return {
         ...state,
@@ -360,10 +416,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     tasks: persisted.tasks ?? initialTasks,
     documents: persisted.documents ?? initialDocuments,
     notifications: (persisted as any).notifications ?? [],
+    conversations: (persisted as any).conversations ?? [],
+    chatMessages:  (persisted as any).chatMessages  ?? [],
   }
   const [state, dispatch] = useReducer(reducer, initialState)
 
-  useEffect(() => { saveState(state) }, [state.employees, state.tasks, state.documents])
+  useEffect(() => { saveState(state) }, [
+    state.employees,
+    state.tasks,
+    state.documents,
+    state.conversations,
+    state.chatMessages,
+    state.notifications,
+    state.mentors,
+  ])
 
   return <AppContext.Provider value={{ state, dispatch }}>{children}</AppContext.Provider>
 }
