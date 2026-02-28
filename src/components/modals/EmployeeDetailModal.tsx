@@ -59,6 +59,14 @@ export default function EmployeeDetailModal({ employee, onClose }: Props) {
     return true
   }
 
+  // uploaderId for scoping documents when editing a task (mirrors CreateTaskModal logic)
+  const uploaderId = currentRole === 'mentor' ? (state.currentUserId ?? 'mentor') : currentRole
+
+  // Helper: can the current user edit this task?
+  const canEditTask = (task: Task) =>
+    currentRole === task.assignedBy &&
+    (currentRole !== 'mentor' || task.assignedByName === currentName)
+
   const toggleVisibility = (taskId: string, role: FeedbackVisibility) => {
     setFeedbackVis(prev => {
       const curr = prev[taskId] ?? VISIBILITY_ROLES
@@ -325,27 +333,25 @@ export default function EmployeeDetailModal({ employee, onClose }: Props) {
                           </button>
                         )}
 
-                        {/* Edit button — only for task creator */}
-                        {canEdit(task) && (
+                        {/* Edit button — only visible to task creator */}
+                        {canEditTask(task) && (
                           <button
                             onClick={() => setEditingTask(task)}
                             title="Edit task"
-                            className="p-1 rounded flex-shrink-0 transition-colors text-brown-300 hover:text-brown-600 hover:bg-brown-50"
+                            className="p-1 rounded flex-shrink-0 text-brown-400 hover:text-brown-700 hover:bg-brown-100 transition-colors"
                           >
                             <Edit3 size={13} />
                           </button>
                         )}
 
-                        {/* Delete button — only for task creator */}
-                        {canEdit(task) && (
-                          <button
-                            onClick={() => setConfirmRemoveTask(isPendingRemove ? null : task.id)}
-                            title="Remove task"
-                            className={`p-1 rounded flex-shrink-0 transition-colors ${isPendingRemove ? 'text-red-600 bg-red-50' : 'text-red-300 hover:text-red-600 hover:bg-red-50'}`}
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        )}
+                        {/* Delete button */}
+                        <button
+                          onClick={() => setConfirmRemoveTask(isPendingRemove ? null : task.id)}
+                          title="Remove task"
+                          className={`p-1 rounded flex-shrink-0 transition-colors ${isPendingRemove ? 'text-red-600 bg-red-50' : 'text-red-300 hover:text-red-600 hover:bg-red-50'}`}
+                        >
+                          <Trash2 size={13} />
+                        </button>
                       </div>
 
                       {/* Remove confirmation inline — only for task creator */}
@@ -537,8 +543,9 @@ export default function EmployeeDetailModal({ employee, onClose }: Props) {
     {showCreateTask && (
       <CreateTaskModal employee={employee} assignedBy={currentRole as 'admin' | 'hr' | 'mentor'} assignedByName={currentName} onClose={() => setShowCreateTask(false)} />
     )}
+
     {editingTask && (
-      <EditTaskModal task={editingTask} onClose={() => setEditingTask(null)} />
+      <EditTaskModal task={editingTask} uploaderId={uploaderId} onClose={() => setEditingTask(null)} />
     )}
     </>
   )
