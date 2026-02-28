@@ -490,6 +490,211 @@ function _extractTasksFromText(text: string): SuggestedTask[] {
   return []
 }
 
+// ─── OnboardBot — context-aware chatbot ──────────────────────────────────────
+
+export interface OnboardBotMessage {
+  role: 'user' | 'bot'
+  content: string
+}
+
+export interface OnboardBotContext {
+  systemPrompt: string
+}
+
+/**
+ * Assembles a role-scoped system prompt from live AppContext state.
+ * Called before every message to ensure context is always fresh.
+ */
+export function buildOnboardBotContext(
+  state: any,
+  userId: string,
+  role: 'admin' | 'hr' | 'mentor' | 'employee'
+): OnboardBotContext {
+  const cs = state.companySettings ?? {}
+  const lines: string[] = []
+
+  lines.push('You are OnboardBot, a helpful assistant for the OnboardEase platform.')
+  lines.push('You answer questions about the company, onboarding tasks, team members, policies, and the onboarding process.')
+  lines.push('Be concise, friendly, and accurate. Only use the information provided below — do not invent facts.')
+  lines.push("If you don't know something, say so and suggest who to contact.")
+  lines.push('')
+  lines.push('=== COMPANY ===')
+  lines.push(`Name: ${cs.name ?? 'N/A'}`)
+  lines.push(`Industry: ${cs.industry ?? 'N/A'}`)
+  lines.push(`Team Size: ${cs.teamSize ?? 'N/A'}`)
+  lines.push(`About: ${cs.about ?? 'N/A'}`)
+  lines.push('')
+
+  // ── employee scope ────────────────────────────────────────────────────────
+  if (role === 'employee') {
+    const emp = state.employees?.find((e: any) => e.id === userId)
+    if (emp) {
+      lines.push('=== YOUR PROFILE ===')
+      lines.push(`Name: ${emp.name}`)
+      lines.push(`Role: ${emp.role}`)
+      lines.push(`Start Date: ${emp.startDate} | Day ${emp.day} of ${emp.totalDays}`)
+      const allMentors = [...(state.mentors ?? []), ...([] as any[])]
+      const mentor = [...(state.mentors ?? [])].find((m: any) => m.id === emp.mentorId)
+        ?? (emp.mentorId ? { name: emp.mentorId, specialty: '' } : null)
+      if (mentor) lines.push(`Mentor: ${mentor.name} (${mentor.specialty})`)
+      lines.push('')
+    }
+    const myTasks = (state.tasks ?? []).filter((t: any) => t.assignedTo === userId)
+    if (myTasks.length > 0) {
+      lines.push('=== YOUR TASKS ===')
+      myTasks.forEach((t: any) => lines.push(`- ${t.title} | ${t.status} | ${t.category} | ${t.estimatedTime} | assigned by ${t.assignedByName}`))
+      lines.push('')
+    }
+    const myMeetings = (state.meetings ?? []).filter((m: any) => m.employeeId === userId)
+    if (myMeetings.length > 0) {
+      lines.push('=== UPCOMING MEETINGS ===')
+      myMeetings.forEach((m: any) => lines.push(`- ${m.title} | ${m.date} ${m.time}`))
+      lines.push('')
+    }
+  }
+
+  // ── mentor scope ──────────────────────────────────────────────────────────
+  if (role === 'mentor') {
+    const mentor = [...(state.mentors ?? [])].find((m: any) => m.id === userId)
+    if (mentor) {
+      lines.push('=== YOUR PROFILE ===')
+      lines.push(`Name: ${mentor.name}`)
+      lines.push(`Specialty: ${mentor.specialty}`)
+      lines.push('')
+    }
+    const myMentees = (state.employees ?? []).filter((e: any) => e.mentorId === userId)
+    if (myMentees.length > 0) {
+      lines.push('=== MY MENTEES ===')
+      myMentees.forEach((e: any) => {
+        const tasks = (state.tasks ?? []).filter((t: any) => t.assignedTo === e.id)
+        const done = tasks.filter((t: any) => t.status === 'done').length
+        const progress = tasks.length > 0 ? Math.round((done / tasks.length) * 100) : e.progress
+        lines.push(`- ${e.name} | ${e.role} | progress: ${progress}% | risk: ${e.risk}`)
+      })
+      lines.push('')
+    }
+    const myAssignedTasks = (state.tasks ?? []).filter((t: any) => t.assignedBy === 'mentor' && myMentees.some((e: any) => e.id === t.assignedTo))
+    if (myAssignedTasks.length > 0) {
+      lines.push('=== TASKS I ASSIGNED ===')
+      myAssignedTasks.forEach((t: any) => {
+        const emp = myMentees.find((e: any) => e.id === t.assignedTo)
+        lines.push(`- ${t.title} | ${t.status} | for ${emp?.name ?? t.assignedTo}`)
+      })
+      lines.push('')
+    }
+  }
+
+  // ── hr scope ──────────────────────────────────────────────────────────────
+  if (role === 'hr') {
+    lines.push('=== ALL EMPLOYEES ===')
+    ;(state.employees ?? []).forEach((e: any) => {
+      const tasks = (state.tasks ?? []).filter((t: any) => t.assignedTo === e.id)
+      const done = tasks.filter((t: any) => t.status === 'done').length
+      const progress = tasks.length > 0 ? Math.round((done / tasks.length) * 100) : e.progress
+      lines.push(`- ${e.name} | ${e.role} | progress: ${progress}% | risk: ${e.risk}`)
+    })
+    lines.push('')
+    lines.push('=== ALL MENTORS ===')
+    ;(state.mentors ?? []).forEach((m: any) => {
+      const count = (state.employees ?? []).filter((e: any) => e.mentorId === m.id).length
+      lines.push(`- ${m.name} | ${m.specialty} | ${m.department} | ${count} mentees`)
+    })
+    lines.push('')
+  }
+
+  // ── admin scope ───────────────────────────────────────────────────────────
+  if (role === 'admin') {
+    lines.push('=== ALL EMPLOYEES ===')
+    ;(state.employees ?? []).forEach((e: any) => {
+      const tasks = (state.tasks ?? []).filter((t: any) => t.assignedTo === e.id)
+      const done = tasks.filter((t: any) => t.status === 'done').length
+      const progress = tasks.length > 0 ? Math.round((done / tasks.length) * 100) : e.progress
+      const allMentors2 = state.mentors ?? []
+      const mentor = allMentors2.find((m: any) => m.id === e.mentorId)
+      lines.push(`- ${e.name} | ${e.role} | Day ${e.day}/${e.totalDays} | progress: ${progress}% | risk: ${e.risk} | mentor: ${mentor?.name ?? 'unassigned'}`)
+    })
+    lines.push('')
+    lines.push('=== ALL MENTORS ===')
+    ;(state.mentors ?? []).forEach((m: any) => {
+      const count = (state.employees ?? []).filter((e: any) => e.mentorId === m.id).length
+      lines.push(`- ${m.name} | ${m.specialty} | ${m.department} | ${count} mentees`)
+    })
+    lines.push('')
+    lines.push('=== ALL TASKS SUMMARY ===')
+    const allTasks = state.tasks ?? []
+    const pending = allTasks.filter((t: any) => t.status === 'pending').length
+    const inProg  = allTasks.filter((t: any) => t.status === 'in-progress').length
+    const done    = allTasks.filter((t: any) => t.status === 'done').length
+    lines.push(`Total: ${allTasks.length} | Pending: ${pending} | In Progress: ${inProg} | Done: ${done}`)
+    lines.push('')
+    lines.push('=== DOCUMENTS ===')
+    ;(state.documents ?? []).forEach((d: any) => lines.push(`- ${d.name} | ${d.type} | uploaded ${d.date}`))
+    lines.push('')
+  }
+
+  return { systemPrompt: lines.join('\n') }
+}
+
+/**
+ * Sends a user message to the OnboardBot AI agent with full context injection.
+ * Maintains session via a persistent chatId ref.
+ */
+export async function sendOnboardBotMessage(
+  userMessage: string,
+  context: OnboardBotContext,
+  history: OnboardBotMessage[],
+  chatIdRef: { current: string | null }
+): Promise<string> {
+  const token = await getAccessToken()
+
+  if (token) {
+    if (!chatIdRef.current) {
+      const id = await createChat(token, AGENT_ID)
+      if (id) chatIdRef.current = id
+    }
+    if (chatIdRef.current) {
+      const isFirst = history.length === 0
+      const fullMsg = isFirst
+        ? `${context.systemPrompt}\n\nUser: ${userMessage}`
+        : `User: ${userMessage}`
+      const reply = await sendMessage(token, chatIdRef.current, fullMsg)
+      if (reply) return reply
+    }
+  }
+
+  // ── Keyword-based mock fallback ────────────────────────────────────────────
+  await new Promise(r => setTimeout(r, 700 + Math.random() * 500))
+  const lower = userMessage.toLowerCase()
+  const sp = context.systemPrompt
+
+  if (lower.includes('task') || lower.includes('todo') || lower.includes('pending')) {
+    const taskLines = sp.split('\n').filter(l => l.startsWith('- ') && (l.includes('pending') || l.includes('in-progress') || l.includes('done')))
+    if (taskLines.length > 0) return `Here are your tasks:\n${taskLines.slice(0, 6).join('\n')}`
+    return "You don't have any tasks assigned yet. Check back soon or ask your manager."
+  }
+  if (lower.includes('mentor') || lower.includes('buddy')) {
+    const mentorLine = sp.split('\n').find(l => l.startsWith('Mentor:'))
+    return mentorLine ? `Your ${mentorLine.toLowerCase()}` : 'You can find your mentor info in the Overview tab.'
+  }
+  if (lower.includes('company') || lower.includes('about') || lower.includes('mission')) {
+    const about = sp.split('\n').find(l => l.startsWith('About:'))
+    return about ? about.replace('About: ', '') : 'Check the company info in Admin Settings.'
+  }
+  if (lower.includes('progress') || lower.includes('how am i doing')) {
+    const doneLine = sp.split('\n').find(l => l.includes('progress:'))
+    return doneLine ? `Your ${doneLine.replace('- ', '')}` : 'Visit your Overview tab to see your onboarding progress.'
+  }
+  if (lower.includes('meeting') || lower.includes('schedule') || lower.includes('calendar')) {
+    const meets = sp.split('\n').filter(l => l.includes('|') && (l.includes('AM') || l.includes('PM')))
+    if (meets.length > 0) return `Upcoming meetings:\n${meets.join('\n')}`
+    return 'No upcoming meetings found. Contact your mentor to schedule one.'
+  }
+  if (lower.includes('policy') || lower.includes('handbook') || lower.includes('rule')) {
+    return 'For policies and guidelines, check the Documents section or contact HR.'
+  }
+  return "I'm OnboardBot — here to help with your onboarding! Ask me about your tasks, mentor, company info, meetings, or policies."
+}
+
 // ─── Task extraction helper ───────────────────────────────────────────────────
 // Parses AI response text to extract structured tasks
 

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Bot, Send, Loader2, User, Sparkles, X } from 'lucide-react'
-import { generalChat } from '../../services/aiService'
+import { useApp } from '../../context/AppContext'
+import { buildOnboardBotContext, sendOnboardBotMessage, type OnboardBotMessage } from '../../services/aiService'
 
 interface Message {
   id: string
@@ -18,10 +19,10 @@ interface Props {
 }
 
 const QUICK_PROMPTS = [
-  'How do I improve at-risk employee engagement?',
+  'Show me employees who are at risk',
   'Best practices for Day 1 onboarding?',
   'How to structure a 30-day plan?',
-  'Tips for remote employee onboarding?',
+  'Give me an onboarding progress summary',
 ]
 
 function timestamp() {
@@ -29,20 +30,20 @@ function timestamp() {
 }
 
 export default function AdminChatWidget({ employeeCount, atRiskCount, avgProgress, docCount, atRiskNames }: Props) {
+  const { state } = useApp()
   const [messages, setMessages]   = useState<Message[]>([])
   const [input,    setInput]      = useState('')
   const [loading,  setLoading]    = useState(false)
   const bottomRef  = useRef<HTMLDivElement>(null)
   const inputRef   = useRef<HTMLInputElement>(null)
+  // Persistent chat session ref for OnboardBot
+  const chatIdRef  = useRef<string | null>(null)
+  // History for OnboardBot (mirrors messages for context continuity)
+  const botHistory = useRef<OnboardBotMessage[]>([])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading])
-
-  const buildContext = () =>
-    `You are an expert onboarding assistant helping an HR admin manage employee onboarding.
-Current dashboard state: ${employeeCount} employees total, ${atRiskCount} at-risk (${atRiskNames.join(', ') || 'none'}), average onboarding progress ${avgProgress}%, ${docCount} documents uploaded.
-Be concise, practical, and specific. Use bullet points when listing multiple items. Max 150 words per response.`
 
   const send = async (text?: string) => {
     const msg = (text ?? input).trim()
@@ -51,10 +52,16 @@ Be concise, practical, and specific. Use bullet points when listing multiple ite
 
     const userMsg: Message = { id: `u-${Date.now()}`, role: 'user', content: msg, ts: timestamp() }
     setMessages(prev => [...prev, userMsg])
+    botHistory.current = [...botHistory.current, { role: 'user', content: msg }]
     setLoading(true)
 
     try {
-      const reply = await generalChat(msg, buildContext())
+      // Determine role: if HR page uses this widget, currentRole is 'hr'; else 'admin'
+      const role = (state.currentRole === 'hr' ? 'hr' : 'admin') as 'admin' | 'hr'
+      const userId = role === 'hr' ? 'hr' : 'admin'
+      const context = buildOnboardBotContext(state, userId, role)
+      const reply = await sendOnboardBotMessage(msg, context, botHistory.current, chatIdRef)
+      botHistory.current = [...botHistory.current, { role: 'bot', content: reply }]
       setMessages(prev => [...prev, { id: `a-${Date.now()}`, role: 'ai', content: reply, ts: timestamp() }])
     } catch {
       setMessages(prev => [...prev, { id: `e-${Date.now()}`, role: 'ai', content: 'Sorry, something went wrong. Please try again.', ts: timestamp() }])
@@ -62,7 +69,11 @@ Be concise, practical, and specific. Use bullet points when listing multiple ite
     setLoading(false)
   }
 
-  const clearChat = () => setMessages([])
+  const clearChat = () => {
+    setMessages([])
+    botHistory.current = []
+    chatIdRef.current = null
+  }
 
   return (
     <div className="rounded-2xl border border-brown-200 bg-white flex flex-col overflow-hidden" style={{ height: '380px' }}>

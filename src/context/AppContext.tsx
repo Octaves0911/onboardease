@@ -135,6 +135,13 @@ export interface ChatConversation {
   lastMessageAt?: string
 }
 
+export interface CompanySettings {
+  name: string
+  industry: string
+  teamSize: string
+  about: string
+}
+
 interface AppState {
   currentRole: 'admin' | 'hr' | 'mentor' | 'employee' | null
   currentUserId: string | null
@@ -146,6 +153,7 @@ interface AppState {
   conversations: ChatConversation[]
   chatMessages: ChatMessage[]
   meetings: Meeting[]
+  companySettings: CompanySettings
 }
 
 type Action =
@@ -176,6 +184,7 @@ type Action =
   | { type: 'CREATE_CONVERSATION'; payload: ChatConversation }
   | { type: 'ADD_CHAT_MESSAGE'; payload: ChatMessage }
   | { type: 'MARK_CHAT_READ'; payload: { conversationId: string; userId: string } }
+  | { type: 'UPDATE_COMPANY_SETTINGS'; payload: CompanySettings }
 
 // ─── Initial Data ─────────────────────────────────────────────────────────────
 
@@ -243,6 +252,7 @@ function saveState(state: AppState) {
       chatMessages: state.chatMessages.map(({ fileData: _fd, ...m }) => m),
       // Strip fileData (binary) before persisting to avoid bloating localStorage
       documents: state.documents.map(({ fileData: _fd, ...d }) => d),
+      companySettings: state.companySettings,
     }))
   } catch {}
 }
@@ -463,6 +473,8 @@ function reducer(state: AppState, action: Action): AppState {
             : e
         )
       }
+    case 'UPDATE_COMPANY_SETTINGS':
+      return { ...state, companySettings: action.payload }
     default:
       return state
   }
@@ -488,6 +500,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     conversations: (persisted as any).conversations ?? [],
     chatMessages:  (persisted as any).chatMessages  ?? [],
     meetings:      (persisted as any).meetings      ?? initialMeetings,
+    companySettings: (persisted as any).companySettings ?? {
+      name: 'Acme Corp',
+      industry: 'SaaS / Software',
+      teamSize: '15-30 employees',
+      about: 'Acme Corp is a fast-growing SaaS company dedicated to building innovative tools that help teams collaborate and scale effectively.',
+    },
   }
   const [state, dispatch] = useReducer(reducer, initialState)
 
@@ -500,6 +518,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     state.notifications,
     state.mentors,
     state.meetings,
+    state.companySettings,
   ])
 
   return <AppContext.Provider value={{ state, dispatch }}>{children}</AppContext.Provider>

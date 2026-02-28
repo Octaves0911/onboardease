@@ -7,7 +7,6 @@ import {
 import { useApp, initialMentors } from '../../context/AppContext'
 import AIDocumentChat from '../chat/AIDocumentChat'
 import AssignTaskModal from '../modals/AssignTaskModal'
-import AIChatWidget from '../common/AIChatWidget'
 
 const TABS = ['Overview', 'Employees & Tasks', 'Documents', 'Analytics']
 
@@ -342,7 +341,7 @@ export default function HRDashboard() {
           assignedByName="HR Team"
         />
       )}
-      <AIChatWidget />
+      {/* OnboardBotWidget is mounted at the HRPage level */}
     </div>
   )
 }

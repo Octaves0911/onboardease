@@ -8,6 +8,7 @@ import AdminPanel from '../components/dashboard/AdminPanel'
 import ChatTab, { useChatUnread } from '../components/chat/ChatTab'
 import ProfileModal from '../components/modals/ProfileModal'
 import Logo from '../components/common/Logo'
+import OnboardBotWidget from '../components/chat/OnboardBotWidget'
 
 const NAV_ITEMS = [
   { icon: <LayoutDashboard size={20} />, label: 'Overview',  id: 'overview'  },
@@ -104,6 +105,7 @@ export default function HRPage() {
       </div>
 
       {showProfile && <ProfileModal onClose={() => setShowProfile(false)} />}
+      <OnboardBotWidget />
     </div>
   )
 }

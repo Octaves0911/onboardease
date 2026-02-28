@@ -9,6 +9,7 @@ import MentorDashboard from '../components/dashboard/MentorDashboard'
 import ChatTab, { useChatUnread } from '../components/chat/ChatTab'
 import Logo from '../components/common/Logo'
 import { useApp, initialMentors } from '../context/AppContext'
+import OnboardBotWidget from '../components/chat/OnboardBotWidget'
 
 const NAV_ITEMS = [
   { icon: <LayoutDashboard size={20} />, label: 'Overview',   id: 'overview'  },
@@ -119,6 +120,7 @@ export default function MentorPage() {
           }
         </main>
       </div>
+      <OnboardBotWidget />
     </div>
   )
 }
