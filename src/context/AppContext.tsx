@@ -94,6 +94,7 @@ export interface Notification {
   message: string
   createdAt: string
   read: boolean
+  mentorId?: string   // if set, only surfaces to this mentor's bell icon
 }
 
 // ─── Chat ────────────────────────────────────────────────────────────────────
@@ -153,6 +154,7 @@ type Action =
   | { type: 'REMOVE_MENTOR'; payload: { id: string } }
   | { type: 'REMOVE_DOCUMENT'; payload: { id: string } }
   | { type: 'MARK_NOTIFICATIONS_READ' }
+  | { type: 'MARK_MENTOR_NOTIFICATIONS_READ'; payload: { mentorId: string } }
   | { type: 'ADD_TASK_FEEDBACK'; payload: { taskId: string; feedback: TaskFeedback } }
   | { type: 'UPDATE_EMPLOYEE_BIO'; payload: { id: string; bio: string } }
   | { type: 'CREATE_CONVERSATION'; payload: ChatConversation }
@@ -236,7 +238,19 @@ function reducer(state: AppState, action: Action): AppState {
         createdAt: new Date().toISOString(),
         read: false,
       }
-      return { ...state, employees: [...state.employees, action.payload], notifications: [...state.notifications, notif] }
+      const newNotifs: Notification[] = [...state.notifications, notif]
+      // Fire a mentor-scoped notification if a mentor is assigned
+      if (action.payload.mentorId) {
+        newNotifs.push({
+          id: `notif-mentor-${Date.now()}`,
+          type: 'employee_added',
+          message: `${action.payload.name} (${action.payload.role}) has been assigned to you as a mentee`,
+          createdAt: new Date().toISOString(),
+          read: false,
+          mentorId: action.payload.mentorId,
+        })
+      }
+      return { ...state, employees: [...state.employees, action.payload], notifications: newNotifs }
     }
     case 'ADD_TASK': {
       const newNotifs = action.payload.assignedBy === 'admin'
@@ -347,6 +361,13 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, documents: state.documents.filter(d => d.id !== action.payload.id) }
     case 'MARK_NOTIFICATIONS_READ':
       return { ...state, notifications: state.notifications.map(n => ({ ...n, read: true })) }
+    case 'MARK_MENTOR_NOTIFICATIONS_READ':
+      return {
+        ...state,
+        notifications: state.notifications.map(n =>
+          n.mentorId === action.payload.mentorId ? { ...n, read: true } : n
+        ),
+      }
     case 'ADD_TASK_FEEDBACK':
       return {
         ...state,

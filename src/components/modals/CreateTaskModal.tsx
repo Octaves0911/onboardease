@@ -12,6 +12,10 @@ import type { SuggestedTask, TaskChatMessage } from '../../services/aiService'
 interface Props {
   employee: Employee
   onClose: () => void
+  /** Who is creating the task — defaults to 'admin' */
+  assignedBy?: 'admin' | 'hr' | 'mentor'
+  /** Display name of the creator — defaults to 'Admin' */
+  assignedByName?: string
 }
 
 const CATEGORIES = ['Setup', 'Learning', 'Technical', 'Compliance', 'People', 'Tools', 'Admin', 'General']
@@ -45,7 +49,7 @@ function emptyForm(): ManualForm {
   }
 }
 
-export default function CreateTaskModal({ employee, onClose }: Props) {
+export default function CreateTaskModal({ employee, onClose, assignedBy = 'admin', assignedByName = 'Admin' }: Props) {
   const { state, dispatch } = useApp()
   const [mode, setMode] = useState<Mode>('manual')
 
@@ -107,8 +111,8 @@ export default function CreateTaskModal({ employee, onClose }: Props) {
       estimatedTime: form.estimatedTime.trim() || '30 min',
       priority: form.priority,
       assignedTo: employee.id,
-      assignedBy: 'admin',
-      assignedByName: 'Admin',
+      assignedBy,
+      assignedByName,
       status: 'pending',
       createdAt: new Date().toISOString().split('T')[0],
       subtasks: form.subtasks.map((t, i) => ({ id: `st-${Date.now()}-${i}`, title: t, status: 'pending' })),
@@ -191,8 +195,8 @@ export default function CreateTaskModal({ employee, onClose }: Props) {
       estimatedTime: s.estimatedTime,
       priority: s.priority,
       assignedTo: employee.id,
-      assignedBy: 'admin',
-      assignedByName: 'Admin',
+      assignedBy,
+      assignedByName,
       status: 'pending',
       createdAt: new Date().toISOString().split('T')[0],
       order,

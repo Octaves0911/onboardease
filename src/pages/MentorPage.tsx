@@ -1,27 +1,36 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useParams, Navigate } from 'react-router-dom'
 import {
-  LayoutDashboard, Users, BarChart3, MessageSquare,
-  Calendar, Settings, ChevronLeft, ChevronRight, Bot
+  LayoutDashboard, Users, FileText, MessageSquare,
+  Calendar, Settings, ChevronLeft, ChevronRight
 } from 'lucide-react'
 import Navbar from '../components/common/Navbar'
 import MentorDashboard from '../components/dashboard/MentorDashboard'
 import ChatTab, { useChatUnread } from '../components/chat/ChatTab'
 import Logo from '../components/common/Logo'
+import { useApp, initialMentors } from '../context/AppContext'
 
 const NAV_ITEMS = [
   { icon: <LayoutDashboard size={20} />, label: 'Overview',   id: 'overview'  },
   { icon: <Users size={20} />,           label: 'My Mentees', id: 'mentees'   },
-  { icon: <BarChart3 size={20} />,       label: 'Progress',   id: 'progress'  },
-  { icon: <Bot size={20} />,             label: 'AI Insights',id: 'insights'  },
+  { icon: <FileText size={20} />,        label: 'Documents',  id: 'docs'      },
   { icon: <Calendar size={20} />,        label: 'Schedule',   id: 'schedule'  },
   { icon: <MessageSquare size={20} />,   label: 'Chat',       id: 'chat'      },
   { icon: <Settings size={20} />,        label: 'Settings',   id: 'settings'  },
 ]
 
-function MentorNav({ collapsed, active, setActive }: { collapsed: boolean; active: string; setActive: (id: string) => void }) {
+function MentorNav({
+  collapsed,
+  active,
+  setActive,
+}: {
+  collapsed: boolean
+  active: string
+  setActive: (id: string) => void
+}) {
   const unread = useChatUnread()
   return (
-    <nav className="flex-1 p-3 space-y-1">
+    <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
       {NAV_ITEMS.map(item => (
         <button
           key={item.id}
@@ -57,45 +66,56 @@ function MentorNav({ collapsed, active, setActive }: { collapsed: boolean; activ
 }
 
 export default function MentorPage() {
+  const { mentorId }          = useParams<{ mentorId: string }>()
+  const { dispatch }          = useApp()
   const [collapsed, setCollapsed] = useState(false)
   const [active,    setActive]    = useState('overview')
 
+  // Restore role from URL on every mount/reload — no more crash on F5
+  useEffect(() => {
+    if (mentorId) {
+      dispatch({ type: 'SET_ROLE', payload: { role: 'mentor', userId: mentorId } })
+    }
+  }, [mentorId, dispatch])
+
+  // Guard: if the mentorId in the URL doesn't exist, redirect to login
+  const validMentor = initialMentors.find(m => m.id === mentorId)
+  if (!validMentor) return <Navigate to="/login" replace />
+
   return (
     <div className="flex min-h-screen" style={{ background: '#F0F7FF' }}>
+
+      {/* ── Sidebar ── */}
       <aside
         className="flex-shrink-0 flex flex-col border-r border-brown-200 transition-all duration-300"
         style={{ background: '#E0EFFD', width: collapsed ? 64 : 240 }}
       >
-        <div className="h-16 flex items-center px-4 border-b border-brown-200">
+        {/* Header with logo + collapse arrow (same pattern as Admin) */}
+        <div className="h-16 flex items-center justify-between px-3 border-b border-brown-200">
           {collapsed ? <Logo size="sm" variant="icon" /> : <Logo size="sm" />}
+          <button
+            onClick={() => setCollapsed(!collapsed)}
+            className="p-1.5 rounded-lg text-brown-500 hover:bg-brown-200 transition-colors flex-shrink-0"
+          >
+            {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+          </button>
         </div>
 
+        {/* Nav — no bottom info card */}
         <MentorNav collapsed={collapsed} active={active} setActive={setActive} />
-
-        {!collapsed && (
-          <div className="p-4 border-t border-brown-200">
-            <div className="bg-brown-200 rounded-xl p-3">
-              <p className="text-xs text-brown-700 font-bold">Mentor</p>
-              <p className="text-xs text-brown-600">Sarah Chen</p>
-              <p className="text-xs text-brown-500 mt-0.5">4 active mentees</p>
-            </div>
-          </div>
-        )}
-
-        <button
-          onClick={() => setCollapsed(!collapsed)}
-          className="flex items-center justify-center h-10 border-t border-brown-200 text-brown-500 hover:bg-brown-200 transition-colors"
-        >
-          {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-        </button>
       </aside>
 
+      {/* ── Main ── */}
       <div className="flex-1 min-w-0 flex flex-col">
-        <Navbar variant="app" />
+        <Navbar variant="app" title="Mentor Portal" />
         <main className="flex-1 overflow-hidden">
           {active === 'chat'
             ? <ChatTab />
-            : <div className="overflow-y-auto h-full"><MentorDashboard /></div>
+            : (
+              <div className="overflow-y-auto h-full">
+                <MentorDashboard activeSection={active} mentorId={mentorId} />
+              </div>
+            )
           }
         </main>
       </div>

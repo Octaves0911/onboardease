@@ -66,7 +66,7 @@ export default function LoginPage() {
 
   const handleMentorSelect = (mentorId: string) => {
     dispatch({ type: 'SET_ROLE', payload: { role: 'mentor', userId: mentorId } })
-    navigate('/mentor')
+    navigate(`/mentor/${mentorId}`)
   }
 
   const handleEmployeeSelect = (employeeId: string) => {
