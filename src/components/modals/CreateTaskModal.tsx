@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import {
   X, Plus, Trash2, Bot, Send, CheckCircle, Sparkles,
   Link2, FileText, AlertCircle, ChevronDown, ChevronUp, Loader2,
-  ArrowUp, ArrowDown, GripVertical, User, RotateCcw
+  ArrowUp, ArrowDown, GripVertical, User, RotateCcw, FlaskConical
 } from 'lucide-react'
 import { useApp } from '../../context/AppContext'
 import type { Employee, Task, SubTask, SupportingLink } from '../../context/AppContext'
@@ -39,6 +39,7 @@ interface ManualForm {
   supportingLinks: { label: string; url: string }[]
   requiresInput: boolean
   inputPrompt: string
+  playgroundEnabled: boolean
 }
 
 function emptyForm(): ManualForm {
@@ -46,6 +47,7 @@ function emptyForm(): ManualForm {
     title: '', description: '', category: 'General', estimatedTime: '30 min',
     priority: 'medium', subtasks: [], supportingDocIds: [],
     supportingLinks: [], requiresInput: false, inputPrompt: '',
+    playgroundEnabled: false,
   }
 }
 
@@ -59,6 +61,9 @@ export default function CreateTaskModal({ employee, onClose, assignedBy = 'admin
   const [newLinkLabel, setNewLinkLabel] = useState('')
   const [newLinkUrl, setNewLinkUrl]   = useState('')
   const [formError, setFormError]     = useState('')
+
+  // ── AI playground state (for AI mode — mirrors manual form's flag) ──
+  const [aiPlayground, setAiPlayground] = useState(false)
 
   // ── AI chat state ──
   const [chatInput,      setChatInput]      = useState('')
@@ -120,6 +125,7 @@ export default function CreateTaskModal({ employee, onClose, assignedBy = 'admin
       supportingLinks: form.supportingLinks,
       requiresInput: form.requiresInput,
       inputPrompt: form.requiresInput ? form.inputPrompt.trim() : undefined,
+      playgroundEnabled: assignedBy === 'mentor' ? form.playgroundEnabled : undefined,
     }
     dispatch({ type: 'ADD_TASK', payload: task })
     onClose()
@@ -203,6 +209,7 @@ export default function CreateTaskModal({ employee, onClose, assignedBy = 'admin
       subtasks: (s.subtasks ?? []).map((st, i) => ({ id: `st-${Date.now()}-${i}`, title: st.title, status: 'pending' as const })),
       requiresInput: s.requiresInput,
       inputPrompt: s.requiresInput ? s.inputPrompt : undefined,
+      playgroundEnabled: assignedBy === 'mentor' ? aiPlayground : undefined,
     }
     dispatch({ type: 'ADD_TASK', payload: task })
   }
@@ -397,6 +404,27 @@ export default function CreateTaskModal({ employee, onClose, assignedBy = 'admin
                 )}
               </div>
 
+              {/* Playground toggle — mentor only */}
+              {assignedBy === 'mentor' && (
+                <div className={`border rounded-xl p-4 transition-colors ${form.playgroundEnabled ? 'bg-teal-50 border-teal-200' : 'bg-brown-50 border-brown-200'}`}>
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <div
+                      onClick={() => setForm(f => ({ ...f, playgroundEnabled: !f.playgroundEnabled }))}
+                      className={`w-10 h-6 rounded-full transition-colors flex-shrink-0 relative cursor-pointer ${form.playgroundEnabled ? 'bg-teal-500' : 'bg-brown-200'}`}
+                    >
+                      <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${form.playgroundEnabled ? 'translate-x-5' : 'translate-x-1'}`} />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <FlaskConical size={15} className={form.playgroundEnabled ? 'text-teal-600' : 'text-brown-400'} />
+                      <div>
+                        <p className="text-sm font-semibold text-brown-800">Enable Playground</p>
+                        <p className="text-xs text-brown-500">Mentee can try this task freely without it affecting official progress</p>
+                      </div>
+                    </div>
+                  </label>
+                </div>
+              )}
+
               {formError && (
                 <div className="flex items-center gap-2 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
                   <AlertCircle size={13} />
@@ -409,6 +437,22 @@ export default function CreateTaskModal({ employee, onClose, assignedBy = 'admin
           {/* ──────── AI ASSISTED MODE ──────── */}
           {mode === 'ai' && (
             <div className="flex flex-col h-full" style={{ minHeight: 0 }}>
+
+              {/* ── Playground toggle for AI mode — mentor only ── */}
+              {assignedBy === 'mentor' && (
+                <div className={`px-4 pt-3 pb-2 border-b flex items-center gap-3 flex-shrink-0 transition-colors ${aiPlayground ? 'bg-teal-50 border-teal-200' : 'bg-brown-50/60 border-brown-100'}`}>
+                  <div
+                    onClick={() => setAiPlayground(v => !v)}
+                    className={`w-9 h-5 rounded-full transition-colors flex-shrink-0 relative cursor-pointer ${aiPlayground ? 'bg-teal-500' : 'bg-brown-300'}`}
+                  >
+                    <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${aiPlayground ? 'translate-x-[calc(100%-0.25rem)]' : 'translate-x-0.5'}`} />
+                  </div>
+                  <FlaskConical size={13} className={aiPlayground ? 'text-teal-600' : 'text-brown-400'} />
+                  <span className={`text-xs font-semibold ${aiPlayground ? 'text-teal-700' : 'text-brown-500'}`}>
+                    Playground {aiPlayground ? 'enabled' : 'disabled'} — assigned tasks won't affect official progress
+                  </span>
+                </div>
+              )}
 
               {/* ── Document context bar (collapsible top strip) ── */}
               {state.documents.length > 0 && (

@@ -898,7 +898,6 @@ const DEFAULT_AVAILABILITY: DayAvailability[] = [
 ]
 
 function SettingsSection({ currentMentor }: { currentMentor: typeof initialMentors[0] }) {
-  const { state, dispatch } = useApp()
   const [notifNewMentee, setNotifNewMentee] = useState(true)
   const [notifTask,      setNotifTask]      = useState(true)
   const [notifProgress,  setNotifProgress]  = useState(false)
@@ -908,16 +907,6 @@ function SettingsSection({ currentMentor }: { currentMentor: typeof initialMento
   const [availability,   setAvailability]   = useState<DayAvailability[]>(DEFAULT_AVAILABILITY)
   const [savedProfile,   setSavedProfile]   = useState(false)
   const [savedAvail,     setSavedAvail]     = useState(false)
-
-  // Derive playground state from actual tasks so it reflects the real persisted value
-  const myTaskCount     = state.tasks.filter(t => t.assignedBy === 'mentor' && t.assignedByName === currentMentor.name).length
-  const playgroundOn    = myTaskCount > 0 && state.tasks
-    .filter(t => t.assignedBy === 'mentor' && t.assignedByName === currentMentor.name)
-    .every(t => t.playgroundEnabled === true)
-
-  const togglePlayground = (enabled: boolean) => {
-    dispatch({ type: 'SET_MENTOR_PLAYGROUND', payload: { mentorName: currentMentor.name, enabled } })
-  }
 
   const saveProfile = () => { setEditMode(false); setSavedProfile(true); setTimeout(() => setSavedProfile(false), 2500) }
   const saveAvail   = () => { setEditAvail(false); setSavedAvail(true); setTimeout(() => setSavedAvail(false), 2500) }
@@ -1019,33 +1008,6 @@ function SettingsSection({ currentMentor }: { currentMentor: typeof initialMento
           ))}
         </div>
         <p className="text-xs text-brown-400">Availability is shown to your mentees when scheduling meetings.</p>
-      </div>
-
-      {/* Task Playground */}
-      <div className="card space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="font-bold text-brown-900 flex items-center gap-2">
-            <FlaskConical size={16} className="text-teal-500" /> Task Playground
-          </h3>
-          <Toggle on={playgroundOn} setOn={togglePlayground} />
-        </div>
-        <p className="text-sm text-brown-600 leading-relaxed">
-          When enabled, all tasks you've created for your mentees are marked as <strong>Playground</strong> — a sandbox mode where new hires can try and explore tasks freely without affecting their official onboarding progress.
-        </p>
-        <div className={`flex items-start gap-3 p-3 rounded-xl border transition-colors ${playgroundOn ? 'bg-teal-50 border-teal-200' : 'bg-brown-50 border-brown-200'}`}>
-          <FlaskConical size={16} className={`flex-shrink-0 mt-0.5 ${playgroundOn ? 'text-teal-600' : 'text-brown-400'}`} />
-          <div>
-            <p className={`text-sm font-semibold ${playgroundOn ? 'text-teal-800' : 'text-brown-500'}`}>
-              {playgroundOn ? 'Playground is active' : 'Playground is disabled'}
-            </p>
-            <p className="text-xs text-brown-400 mt-0.5">
-              {myTaskCount === 0
-                ? 'You have no tasks assigned to mentees yet.'
-                : `Applies to ${myTaskCount} task${myTaskCount !== 1 ? 's' : ''} you created for your mentees.`
-              }
-            </p>
-          </div>
-        </div>
       </div>
     </div>
   )
