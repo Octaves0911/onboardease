@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import {
   CheckCircle, Clock, Users, Calendar, Flame, Bell,
-  MessageSquare, ChevronRight, ChevronDown, ChevronUp,
+  MessageSquare, ChevronDown, ChevronUp,
   Trophy, ExternalLink, AlertCircle,
-  Settings as SettingsIcon, Bot, Video, FileText, Link2
+  Settings as SettingsIcon, Bot, Video, FileText, Link2,
+  FlaskConical
 } from 'lucide-react'
 import { useApp, initialMentors } from '../../context/AppContext'
 import type { Task, Document } from '../../context/AppContext'
@@ -44,7 +45,8 @@ function TaskAccordion({ task, onToggleStatus, onViewDoc }: {
   onViewDoc: (doc: Document) => void
 }) {
   const { state, dispatch } = useApp()
-  const [expanded, setExpanded] = useState(false)
+  const [expanded,       setExpanded]       = useState(false)
+  const [playgroundOpen, setPlaygroundOpen] = useState(false)
 
   const doneSubs  = (task.subtasks ?? []).filter(s => s.status === 'done').length
   const totalSubs = (task.subtasks ?? []).length
@@ -250,6 +252,25 @@ function TaskAccordion({ task, onToggleStatus, onViewDoc }: {
             </div>
           )}
 
+          {/* Playground mode — open sandbox when enabled by mentor */}
+          {task.playgroundEnabled && (
+            <div className="bg-gradient-to-r from-teal-50 to-cyan-50 border border-teal-200 rounded-xl p-3.5 flex items-start gap-3">
+              <div className="w-8 h-8 rounded-lg bg-teal-100 border border-teal-200 flex items-center justify-center flex-shrink-0">
+                <FlaskConical size={15} className="text-teal-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-teal-800">Playground Active</p>
+                <p className="text-xs text-teal-600 mt-0.5">Your mentor enabled a sandbox for this task — practice freely without affecting your real progress.</p>
+              </div>
+              <button
+                onClick={e => { e.stopPropagation(); setPlaygroundOpen(true) }}
+                className="flex items-center gap-1.5 text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 px-3 py-1.5 rounded-lg transition-colors flex-shrink-0"
+              >
+                <FlaskConical size={12} /> Open
+              </button>
+            </div>
+          )}
+
           {/* Status action button */}
           <button
             onClick={e => { e.stopPropagation(); onToggleStatus(task.id, task.status) }}
@@ -257,6 +278,79 @@ function TaskAccordion({ task, onToggleStatus, onViewDoc }: {
           >
             {btn.label}
           </button>
+        </div>
+      )}
+
+      {/* Playground overlay */}
+      {playgroundOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4" onClick={() => setPlaygroundOpen(false)}>
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+          <div
+            className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="bg-gradient-to-r from-teal-600 to-cyan-600 px-5 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center">
+                  <FlaskConical size={16} className="text-white" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-white leading-none">Playground Mode</p>
+                  <p className="text-xs text-white/70 mt-0.5">Safe sandbox — no real progress affected</p>
+                </div>
+              </div>
+              <button onClick={() => setPlaygroundOpen(false)} className="p-1.5 rounded-lg hover:bg-white/20 text-white transition-colors">
+                <ChevronDown size={18} />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              {/* Task title */}
+              <div className="bg-teal-50 border border-teal-100 rounded-xl p-3.5">
+                <p className="text-xs font-semibold text-teal-600 uppercase tracking-wide mb-1">Task</p>
+                <p className="font-bold text-brown-900">{task.title}</p>
+                {task.description && <p className="text-sm text-brown-600 mt-1 leading-relaxed">{task.description}</p>}
+              </div>
+
+              {/* Sandbox subtasks */}
+              {totalSubs > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-brown-500 uppercase tracking-wide mb-2">Try these steps (sandbox)</p>
+                  <div className="space-y-1.5">
+                    {task.subtasks!.map((sub, i) => (
+                      <div key={sub.id} className="flex items-center gap-2.5 p-2.5 rounded-xl border border-brown-100 bg-brown-50">
+                        <div className="w-5 h-5 rounded-full border-2 border-brown-300 flex items-center justify-center flex-shrink-0 text-xs text-brown-400 font-bold">{i + 1}</div>
+                        <span className="text-sm text-brown-700">{sub.title}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Sandbox notes */}
+              <div>
+                <p className="text-xs font-semibold text-brown-500 uppercase tracking-wide mb-1.5">Your sandbox notes</p>
+                <textarea
+                  className="w-full border border-brown-200 rounded-xl p-3 text-sm text-brown-800 focus:outline-none focus:ring-2 focus:ring-teal-300 resize-none bg-brown-50"
+                  rows={3}
+                  placeholder="Jot down your practice notes here — they won't be saved to your real task…"
+                  onClick={e => e.stopPropagation()}
+                />
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setPlaygroundOpen(false)}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-teal-600 hover:bg-teal-700 text-white transition-colors"
+                >Done Practicing</button>
+                <button
+                  onClick={() => { setPlaygroundOpen(false); onToggleStatus(task.id, task.status) }}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-green-600 hover:bg-green-700 text-white transition-colors"
+                >Mark as Done</button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -456,12 +550,6 @@ function OverviewSection({ employee, myTasks, mentor, onMessageMentor }: {
                   </div>
                 </div>
               </div>
-              <button
-                onClick={() => onMessageMentor(mentor.id)}
-                className="w-full flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold py-2 rounded-xl transition-colors"
-              >
-                <MessageSquare size={14} /> Message {mentor.name.split(' ')[0]}
-              </button>
             </div>
           )}
 
@@ -767,10 +855,22 @@ function BuddySection({ myTasks, mentor }: {
   )
 }
 
-// ── Settings Section (full page) ─────────────────────────────────────────────
+// ── Settings Section (full page, task-based progress) ────────────────────────
 
-function SettingsSection({ employee }: { employee: any }) {
-  const progress = Math.round((employee.day / employee.totalDays) * 100)
+function SettingsSection({ employee, myTasks }: { employee: any; myTasks: Task[] }) {
+  const total       = myTasks.length
+  const done        = myTasks.filter(t => t.status === 'done').length
+  const inProgress  = myTasks.filter(t => t.status === 'in-progress').length
+  const pending     = myTasks.filter(t => t.status === 'pending').length
+  const taskProgress = total > 0 ? Math.round((done / total) * 100) : 0
+
+  // Per-category breakdown
+  const categories = [...new Set(myTasks.map(t => t.category))]
+  const byCategory = categories.map(cat => {
+    const catTasks = myTasks.filter(t => t.category === cat)
+    const catDone  = catTasks.filter(t => t.status === 'done').length
+    return { cat, total: catTasks.length, done: catDone, pct: Math.round((catDone / catTasks.length) * 100) }
+  })
 
   return (
     <div className="space-y-6">
@@ -792,31 +892,80 @@ function SettingsSection({ employee }: { employee: any }) {
         </div>
       </div>
 
-      {/* Details grid */}
+      {/* Profile details grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'Start Date',      value: employee.startDate,                    color: 'bg-blue-50 text-blue-700' },
-          { label: 'Day',             value: `${employee.day} / ${employee.totalDays}`, color: 'bg-teal-50 text-teal-700' },
-          { label: 'Team',            value: employee.team,                          color: 'bg-purple-50 text-purple-700' },
-          { label: 'Onboarding',      value: `${progress}% done`,                   color: 'bg-green-50 text-green-700' },
+          { label: 'Start Date', value: employee.startDate,                        color: 'text-blue-700' },
+          { label: 'Day',        value: `${employee.day} / ${employee.totalDays}`, color: 'text-teal-700' },
+          { label: 'Team',       value: employee.team,                             color: 'text-purple-700' },
+          { label: 'Status',     value: employee.status === 'onboarding' ? 'Onboarding 🟡' : 'Completed ✅', color: 'text-green-700' },
         ].map(s => (
           <div key={s.label} className="card">
-            <p className={`text-xs font-semibold uppercase tracking-wide mb-1 ${s.color.split(' ')[1]}`}>{s.label}</p>
-            <p className="font-bold text-brown-900 text-lg">{s.value}</p>
+            <p className={`text-xs font-semibold uppercase tracking-wide mb-1 ${s.color}`}>{s.label}</p>
+            <p className="font-bold text-brown-900 text-base">{s.value}</p>
           </div>
         ))}
       </div>
 
-      {/* Onboarding progress */}
-      <div className="card">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="font-bold text-brown-900 text-sm">Onboarding Progress</h3>
-          <span className="text-sm font-bold text-brown-700">{progress}%</span>
+      {/* Task-based progress */}
+      <div className="card space-y-5">
+        <div className="flex items-center justify-between">
+          <h3 className="font-bold text-brown-900 flex items-center gap-2">
+            <CheckCircle size={16} className="text-teal-600" /> Task Progress
+          </h3>
+          <span className="text-2xl font-black text-brown-900">{taskProgress}%</span>
         </div>
-        <div className="h-3 bg-brown-100 rounded-full overflow-hidden">
-          <div className="h-full bg-gradient-to-r from-teal-500 to-teal-700 rounded-full transition-all duration-500" style={{ width: `${progress}%` }} />
+
+        {/* Main bar */}
+        <div>
+          <div className="h-4 bg-brown-100 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-teal-500 to-teal-700 rounded-full transition-all duration-700"
+              style={{ width: `${taskProgress}%` }}
+            />
+          </div>
+          <p className="text-xs text-brown-400 mt-1.5">{done} of {total} tasks completed · {pending} pending · {inProgress} in progress</p>
         </div>
-        <p className="text-xs text-brown-400 mt-2">Day {employee.day} of {employee.totalDays} · {employee.totalDays - employee.day} days remaining</p>
+
+        {/* Status breakdown */}
+        <div className="grid grid-cols-3 gap-3">
+          {[
+            { label: 'Done',        count: done,       color: 'bg-green-500',  bg: 'bg-green-50  border-green-200'  },
+            { label: 'In Progress', count: inProgress, color: 'bg-teal-500',   bg: 'bg-teal-50   border-teal-200'   },
+            { label: 'Pending',     count: pending,    color: 'bg-orange-400', bg: 'bg-orange-50 border-orange-200' },
+          ].map(s => (
+            <div key={s.label} className={`rounded-xl border p-3 ${s.bg}`}>
+              <p className="text-xs font-semibold text-brown-500 mb-1">{s.label}</p>
+              <p className="text-2xl font-black text-brown-900">{s.count}</p>
+              <div className="mt-2 h-1.5 bg-white/60 rounded-full overflow-hidden">
+                <div className={`h-full ${s.color} rounded-full`} style={{ width: `${total > 0 ? (s.count / total) * 100 : 0}%` }} />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Per-category breakdown */}
+        {byCategory.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold text-brown-500 uppercase tracking-wide mb-3">By Category</p>
+            <div className="space-y-2.5">
+              {byCategory.map(({ cat, total: ct, done: cd, pct }) => (
+                <div key={cat}>
+                  <div className="flex justify-between text-xs text-brown-600 mb-1 font-medium">
+                    <span>{cat}</span>
+                    <span>{cd}/{ct} · {pct}%</span>
+                  </div>
+                  <div className="h-2 bg-brown-100 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${pct === 100 ? 'bg-green-500' : 'bg-teal-500'}`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Info notice */}
@@ -859,7 +1008,7 @@ export default function NewHireDashboard({ activeSection, onMessageMentor }: Pro
           <BuddySection myTasks={myTasks} mentor={mentor} />
         )}
         {activeSection === 'settings' && (
-          <SettingsSection employee={employee} />
+          <SettingsSection employee={employee} myTasks={myTasks} />
         )}
       </div>
     </div>

@@ -150,6 +150,7 @@ interface AppState {
 
 type Action =
   | { type: 'SCHEDULE_MEETING'; payload: Meeting }
+  | { type: 'DELETE_CONVERSATION'; payload: { id: string } }
   | { type: 'SET_ROLE'; payload: { role: AppState['currentRole']; userId?: string } }
   | { type: 'LOGOUT' }
   | { type: 'ADD_EMPLOYEE'; payload: Employee }
@@ -252,6 +253,12 @@ function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
     case 'SCHEDULE_MEETING':
       return { ...state, meetings: [...state.meetings, action.payload] }
+    case 'DELETE_CONVERSATION':
+      return {
+        ...state,
+        conversations: state.conversations.filter(c => c.id !== action.payload.id),
+        chatMessages:  state.chatMessages.filter(m => m.conversationId !== action.payload.id),
+      }
     case 'SET_ROLE':
       return { ...state, currentRole: action.payload.role, currentUserId: action.payload.userId || null }
     case 'LOGOUT':
@@ -372,11 +379,17 @@ function reducer(state: AppState, action: Action): AppState {
         createdAt: new Date().toISOString(),
         read: false,
       }
+      // Remove all conversations and messages involving the deleted employee
+      const removedConvIds = state.conversations
+        .filter(c => c.participants.includes(action.payload.id))
+        .map(c => c.id)
       return {
         ...state,
-        employees: state.employees.filter(e => e.id !== action.payload.id),
-        tasks:     state.tasks.filter(t => t.assignedTo !== action.payload.id),
+        employees:     state.employees.filter(e => e.id !== action.payload.id),
+        tasks:         state.tasks.filter(t => t.assignedTo !== action.payload.id),
         notifications: [...state.notifications, removeNotif],
+        conversations: state.conversations.filter(c => !removedConvIds.includes(c.id)),
+        chatMessages:  state.chatMessages.filter(m => !removedConvIds.includes(m.conversationId)),
       }
     }
     case 'ADD_MENTOR':

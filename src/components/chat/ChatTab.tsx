@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   Search, Plus, Send, Paperclip, X, Users, MessageSquare,
-  FileText, Image, CheckCheck, Check, UserPlus
+  FileText, Image, CheckCheck, Check, UserPlus, Trash2
 } from 'lucide-react'
 import { useApp, initialMentors } from '../../context/AppContext'
 import type { ChatConversation, ChatMessage } from '../../context/AppContext'
@@ -80,6 +80,8 @@ export default function ChatTab({ openWithUserId }: { openWithUserId?: string })
   const [attachedFile,      setAttachedFile]      = useState<File | null>(null)
   const [attachedData,      setAttachedData]      = useState<string | null>(null)
   const [toast,             setToast]             = useState<string | null>(null)
+  // id of conv pending delete confirmation
+  const [pendingDeleteId,   setPendingDeleteId]   = useState<string | null>(null)
 
   const messagesEndRef   = useRef<HTMLDivElement>(null)
   const fileInputRef     = useRef<HTMLInputElement>(null)
@@ -299,9 +301,16 @@ export default function ChatTab({ openWithUserId }: { openWithUserId?: string })
     setNewChatSearch('')
   }
 
-  const filteredConvs = myConversations.filter(c =>
-    getConvName(c).toLowerCase().includes(convSearch.toLowerCase())
-  )
+  const deleteConversation = (convId: string) => {
+    dispatch({ type: 'DELETE_CONVERSATION', payload: { id: convId } })
+    if (selectedConvId === convId) setSelectedConvId(null)
+    setPendingDeleteId(null)
+    setToast('Conversation deleted')
+  }
+
+  const filteredConvs = myConversations
+    .filter(c => state.chatMessages.some(m => m.conversationId === c.id)) // only show if messages exist
+    .filter(c => getConvName(c).toLowerCase().includes(convSearch.toLowerCase()))
 
   const othersForNewChat = allUsers
     .filter(u => u.id !== currentId)
@@ -360,17 +369,20 @@ export default function ChatTab({ openWithUserId }: { openWithUserId?: string })
             </div>
           )}
           {filteredConvs.map(conv => {
-            const unread = unreadCount(conv.id)
-            const last   = lastMessage(conv.id)
-            const avatar = getConvAvatar(conv)
-            const name   = getConvName(conv)
+            const unread     = unreadCount(conv.id)
+            const last       = lastMessage(conv.id)
+            const avatar     = getConvAvatar(conv)
+            const name       = getConvName(conv)
             const isSelected = conv.id === selectedConvId
+            const isPending  = pendingDeleteId === conv.id
+
             return (
-              <button
+              <div
                 key={conv.id}
-                onClick={() => setSelectedConvId(conv.id)}
-                className={`w-full flex items-center gap-3 px-4 py-3.5 text-left transition-colors ${isSelected ? 'bg-brown-50' : 'hover:bg-brown-50/60'}`}
+                className={`relative group flex items-center gap-3 px-4 py-3.5 transition-colors cursor-pointer ${isSelected ? 'bg-brown-50' : 'hover:bg-brown-50/60'}`}
+                onClick={() => { if (!isPending) setSelectedConvId(conv.id) }}
               >
+                {/* Avatar */}
                 {conv.type === 'group' ? (
                   <div className="w-9 h-9 rounded-full bg-brown-200 flex items-center justify-center flex-shrink-0">
                     <Users size={16} className="text-brown-600" />
@@ -380,27 +392,57 @@ export default function ChatTab({ openWithUserId }: { openWithUserId?: string })
                 ) : (
                   <div className="w-9 h-9 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0 text-xs font-bold text-gray-600">?</div>
                 )}
+
+                {/* Content */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between">
                     <p className={`text-sm truncate ${unread > 0 ? 'font-bold text-brown-900' : 'font-medium text-brown-700'}`}>{name}</p>
-                    {last && (
+                    {last && !isPending && (
                       <span className="text-[10px] text-brown-400 flex-shrink-0 ml-1">
                         {new Date(last.createdAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     )}
                   </div>
-                  <div className="flex items-center justify-between mt-0.5">
-                    <p className="text-xs text-brown-400 truncate">
-                      {last ? (last.type !== 'text' ? `📎 ${last.fileName}` : last.content) : 'No messages yet'}
-                    </p>
-                    {unread > 0 && (
-                      <span className="ml-1 flex-shrink-0 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
-                        {unread > 9 ? '9+' : unread}
-                      </span>
-                    )}
-                  </div>
+                  {!isPending && (
+                    <div className="flex items-center justify-between mt-0.5">
+                      <p className="text-xs text-brown-400 truncate">
+                        {last ? (last.type !== 'text' ? `📎 ${last.fileName}` : last.content) : 'No messages yet'}
+                      </p>
+                      {unread > 0 && (
+                        <span className="ml-1 flex-shrink-0 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                          {unread > 9 ? '9+' : unread}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Inline delete confirm */}
+                  {isPending && (
+                    <div className="flex items-center gap-2 mt-0.5" onClick={e => e.stopPropagation()}>
+                      <span className="text-xs text-red-600 font-medium">Delete this chat?</span>
+                      <button
+                        onClick={() => deleteConversation(conv.id)}
+                        className="text-xs font-bold text-white bg-red-500 hover:bg-red-600 px-2 py-0.5 rounded-md transition-colors"
+                      >Yes</button>
+                      <button
+                        onClick={() => setPendingDeleteId(null)}
+                        className="text-xs font-medium text-brown-600 bg-brown-100 hover:bg-brown-200 px-2 py-0.5 rounded-md transition-colors"
+                      >No</button>
+                    </div>
+                  )}
                 </div>
-              </button>
+
+                {/* Hover-reveal trash icon */}
+                {!isPending && (
+                  <button
+                    onClick={e => { e.stopPropagation(); setPendingDeleteId(conv.id) }}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-brown-300 hover:text-red-500 hover:bg-red-50 transition-colors opacity-0 group-hover:opacity-100"
+                    title="Delete conversation"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                )}
+              </div>
             )
           })}
         </div>

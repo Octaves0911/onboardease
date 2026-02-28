@@ -688,20 +688,35 @@ export default function AdminPanel({ activeSection = 'overview', isHR = false }:
         {/* ═══ SETTINGS ═══ */}
         {activeSection === 'settings' && (
           <div className="grid lg:grid-cols-2 gap-6">
-            {[
-              { title: 'Company Settings',      icon: <Settings size={18} />, fields: [{ label: 'Company Name', value: 'Acme Corp' }, { label: 'Industry', value: 'SaaS / Software' }, { label: 'Team Size', value: '15-30 employees' }] },
-              { title: 'Security & Compliance', icon: <Shield size={18} />,  fields: [{ label: 'Authentication', value: 'SSO + MFA Enabled' }, { label: 'Data Encryption', value: 'AES-256' }, { label: 'Compliance', value: 'GDPR · CCPA · SOC 2' }] },
-            ].map(section => (
-              <div key={section.title} className="card">
-                <h3 className="font-bold text-brown-900 mb-5 flex items-center gap-2">{section.icon}{section.title}</h3>
-                <div className="space-y-4">
-                  {section.fields.map(f => (
-                    <div key={f.label}><label className="block text-xs font-semibold text-brown-600 mb-1.5">{f.label}</label><input type="text" defaultValue={f.value} className="input-field text-sm py-2.5" /></div>
-                  ))}
+            {/* Company Settings */}
+            <div className="card">
+              <h3 className="font-bold text-brown-900 mb-5 flex items-center gap-2"><Settings size={18} />Company Settings</h3>
+              <div className="space-y-4">
+                {[{ label: 'Company Name', value: 'Acme Corp' }, { label: 'Industry', value: 'SaaS / Software' }, { label: 'Team Size', value: '15-30 employees' }].map(f => (
+                  <div key={f.label}><label className="block text-xs font-semibold text-brown-600 mb-1.5">{f.label}</label><input type="text" defaultValue={f.value} className="input-field text-sm py-2.5" /></div>
+                ))}
+                <div>
+                  <label className="block text-xs font-semibold text-brown-600 mb-1.5">About the Company</label>
+                  <textarea
+                    rows={4}
+                    defaultValue="Acme Corp is a fast-growing SaaS company dedicated to building innovative tools that help teams collaborate and scale effectively."
+                    className="input-field text-sm py-2.5 resize-none w-full"
+                    placeholder="Write a short description about your company…"
+                  />
                 </div>
-                <button className="btn-primary w-full mt-5 text-sm py-2.5">Save Changes</button>
               </div>
-            ))}
+              <button className="btn-primary w-full mt-5 text-sm py-2.5">Save Changes</button>
+            </div>
+            {/* Security & Compliance */}
+            <div className="card">
+              <h3 className="font-bold text-brown-900 mb-5 flex items-center gap-2"><Shield size={18} />Security &amp; Compliance</h3>
+              <div className="space-y-4">
+                {[{ label: 'Authentication', value: 'SSO + MFA Enabled' }, { label: 'Data Encryption', value: 'AES-256' }, { label: 'Compliance', value: 'GDPR · CCPA · SOC 2' }].map(f => (
+                  <div key={f.label}><label className="block text-xs font-semibold text-brown-600 mb-1.5">{f.label}</label><input type="text" defaultValue={f.value} className="input-field text-sm py-2.5" /></div>
+                ))}
+              </div>
+              <button className="btn-primary w-full mt-5 text-sm py-2.5">Save Changes</button>
+            </div>
           </div>
         )}
 
