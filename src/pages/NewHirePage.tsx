@@ -7,6 +7,7 @@ import Navbar from '../components/common/Navbar'
 import NewHireDashboard from '../components/dashboard/NewHireDashboard'
 import ChatTab, { useChatUnread } from '../components/chat/ChatTab'
 import Logo from '../components/common/Logo'
+import OnboardBotWidget from '../components/chat/OnboardBotWidget'
 
 const navItems = [
   { icon: <LayoutDashboard size={20} />, label: 'Overview',   id: 'dashboard' },
@@ -118,6 +119,7 @@ export default function NewHirePage() {
           )}
         </main>
       </div>
+      <OnboardBotWidget />
     </div>
   )
 }
