@@ -31,7 +31,6 @@ export default function AdminPanel({ activeSection = 'overview', isHR = false }:
   const [confirmDeleteDoc,    setConfirmDeleteDoc]    = useState<string | null>(null)
   const [docInUseError,       setDocInUseError]       = useState<string | null>(null)
   const [showBulkGenerate,    setShowBulkGenerate]    = useState(false)
-  const [docInUseError,       setDocInUseError]       = useState<string | null>(null)
   const docUploadRef = useRef<HTMLInputElement>(null)
 
   // Check if a document is referenced by any task's supportingDocs

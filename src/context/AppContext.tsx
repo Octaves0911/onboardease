@@ -89,6 +89,17 @@ export interface MentorUser {
   color: string
 }
 
+export interface Meeting {
+  id: string
+  title: string
+  date: string        // ISO date e.g. "2026-03-01"
+  time: string        // e.g. "10:00 AM"
+  mentorId: string
+  employeeId: string
+  description?: string
+  link?: string
+}
+
 export interface Notification {
   id: string
   type: 'task_assigned' | 'employee_added' | 'employee_removed'
@@ -134,9 +145,11 @@ interface AppState {
   notifications: Notification[]
   conversations: ChatConversation[]
   chatMessages: ChatMessage[]
+  meetings: Meeting[]
 }
 
 type Action =
+  | { type: 'SCHEDULE_MEETING'; payload: Meeting }
   | { type: 'SET_ROLE'; payload: { role: AppState['currentRole']; userId?: string } }
   | { type: 'LOGOUT' }
   | { type: 'ADD_EMPLOYEE'; payload: Employee }
@@ -187,6 +200,14 @@ const initialDocuments: Document[] = [
   { id: 'doc-4', name: 'Sales Playbook 2026', type: 'PDF', size: '1.8 MB', status: 'processed', uploadedBy: 'admin', taskCount: 20, date: 'Feb 12', content: 'Sales process: prospect, qualify, demo, proposal, close. CRM: Salesforce - mandatory for all deals. Target: $50k quota per month. Product knowledge: complete all 8 product certification modules. Discovery calls: BANT framework. Demo script: follow standard demo deck. Objection handling: pricing, competition, timing. Pipeline management: weekly review with manager. Commission structure: 8% on closed deals. Territory assignment: by region.' },
 ]
 
+const initialMeetings: Meeting[] = [
+  { id: 'meet-1', title: '1:1 Onboarding Sync', date: '2026-03-01', time: '10:00 AM', mentorId: 'mentor-1', employeeId: 'emp-1', description: 'Weekly sync to review onboarding progress and address any blockers', link: 'https://meet.google.com/abc-defg-hij' },
+  { id: 'meet-2', title: 'Tech Stack Deep Dive', date: '2026-03-03', time: '2:00 PM', mentorId: 'mentor-1', employeeId: 'emp-1', description: 'Walkthrough of the React + TypeScript codebase and system architecture', link: 'https://zoom.us/j/123456789' },
+  { id: 'meet-3', title: 'Code Review Walkthrough', date: '2026-03-06', time: '11:00 AM', mentorId: 'mentor-1', employeeId: 'emp-1', description: 'Review your first PR together and learn team code review standards' },
+  { id: 'meet-4', title: 'Product Roadmap Review', date: '2026-03-02', time: '11:00 AM', mentorId: 'mentor-3', employeeId: 'emp-2', description: 'Overview of Q1 product roadmap and how your role contributes', link: 'https://meet.google.com/xyz-uvwx-yz' },
+  { id: 'meet-5', title: 'CRM Demo & Walkthrough', date: '2026-03-04', time: '3:00 PM', mentorId: 'mentor-2', employeeId: 'emp-3', description: 'Live demo of Salesforce CRM and your territory pipeline setup' },
+]
+
 const initialTasks: Task[] = [
   { id: 'task-init-1', title: 'Complete company overview module', description: 'Watch company overview video and complete knowledge check', category: 'Learning', estimatedTime: '20 min', assignedTo: 'emp-1', assignedBy: 'hr', assignedByName: 'HR Team', status: 'done', createdAt: '2026-02-24' },
   { id: 'task-init-2', title: 'Set up Slack workspace', description: 'Install Slack, join all required channels, update profile', category: 'Tools', estimatedTime: '5 min', assignedTo: 'emp-1', assignedBy: 'admin', assignedByName: 'Admin', status: 'done', createdAt: '2026-02-24' },
@@ -216,6 +237,7 @@ function saveState(state: AppState) {
       mentors:  state.mentors,
       notifications: state.notifications,
       conversations: state.conversations,
+      meetings: state.meetings,
       // Strip fileData from chat messages before persisting
       chatMessages: state.chatMessages.map(({ fileData: _fd, ...m }) => m),
       // Strip fileData (binary) before persisting to avoid bloating localStorage
@@ -228,6 +250,8 @@ function saveState(state: AppState) {
 
 function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
+    case 'SCHEDULE_MEETING':
+      return { ...state, meetings: [...state.meetings, action.payload] }
     case 'SET_ROLE':
       return { ...state, currentRole: action.payload.role, currentUserId: action.payload.userId || null }
     case 'LOGOUT':
@@ -450,6 +474,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     notifications: (persisted as any).notifications ?? [],
     conversations: (persisted as any).conversations ?? [],
     chatMessages:  (persisted as any).chatMessages  ?? [],
+    meetings:      (persisted as any).meetings      ?? initialMeetings,
   }
   const [state, dispatch] = useReducer(reducer, initialState)
 
@@ -461,6 +486,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     state.chatMessages,
     state.notifications,
     state.mentors,
+    state.meetings,
   ])
 
   return <AppContext.Provider value={{ state, dispatch }}>{children}</AppContext.Provider>

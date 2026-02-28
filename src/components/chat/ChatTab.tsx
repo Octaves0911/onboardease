@@ -62,7 +62,7 @@ function Avatar({ user, size = 8 }: { user: ChatUser; size?: number }) {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function ChatTab() {
+export default function ChatTab({ openWithUserId }: { openWithUserId?: string }) {
   const { state, dispatch } = useApp()
   const getAllUsers = useAllUsers()
   const allUsers    = getAllUsers(state)
@@ -119,6 +119,39 @@ export default function ChatTab() {
 
   const selectedConv  = state.conversations.find(c => c.id === selectedConvId) ?? null
   const activeMessages = state.chatMessages.filter(m => m.conversationId === selectedConvId)
+
+  // Guard: track which userId we've already processed so we never create
+  // duplicate conversations (guards against React Strict Mode double-invoke)
+  const processedConvRef = useRef<string | null>(null)
+
+  // ── auto-open conversation when openWithUserId prop is provided ───────────────
+  useEffect(() => {
+    if (!openWithUserId) return
+    // Already handled this userId in this mount — skip
+    if (processedConvRef.current === openWithUserId) return
+    processedConvRef.current = openWithUserId
+
+    // Look for an existing direct conversation first
+    const existing = state.conversations.find(
+      c => c.type === 'direct' &&
+           c.participants.includes(currentId) &&
+           c.participants.includes(openWithUserId)
+    )
+    if (existing) {
+      setSelectedConvId(existing.id)
+    } else {
+      const conv: ChatConversation = {
+        id:            `conv-${Date.now()}`,
+        type:          'direct',
+        participants:  [currentId, openWithUserId],
+        createdAt:     new Date().toISOString(),
+        lastMessageAt: new Date().toISOString(),
+      }
+      dispatch({ type: 'CREATE_CONVERSATION', payload: conv })
+      setSelectedConvId(conv.id)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openWithUserId])
 
   // ── mark as read when opening conversation ───────────────────────────────────
   useEffect(() => {
