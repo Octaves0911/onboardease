@@ -64,6 +64,7 @@ export interface Task {
   inputPrompt?: string
   inputValue?: string
   feedback?: TaskFeedback[]   // feedback on completed tasks
+  playgroundEnabled?: boolean  // mentor sandbox mode — new hire can try without affecting real progress
 }
 
 export interface Document {
@@ -157,6 +158,7 @@ type Action =
   | { type: 'MARK_MENTOR_NOTIFICATIONS_READ'; payload: { mentorId: string } }
   | { type: 'ADD_TASK_FEEDBACK'; payload: { taskId: string; feedback: TaskFeedback } }
   | { type: 'UPDATE_EMPLOYEE_BIO'; payload: { id: string; bio: string } }
+  | { type: 'SET_MENTOR_PLAYGROUND'; payload: { mentorName: string; enabled: boolean } }
   | { type: 'CREATE_CONVERSATION'; payload: ChatConversation }
   | { type: 'ADD_CHAT_MESSAGE'; payload: ChatMessage }
   | { type: 'MARK_CHAT_READ'; payload: { conversationId: string; userId: string } }
@@ -309,6 +311,15 @@ function reducer(state: AppState, action: Action): AppState {
       }
     case 'REMOVE_TASK':
       return { ...state, tasks: state.tasks.filter(t => t.id !== action.payload.id) }
+    case 'SET_MENTOR_PLAYGROUND':
+      return {
+        ...state,
+        tasks: state.tasks.map(t =>
+          t.assignedBy === 'mentor' && t.assignedByName === action.payload.mentorName
+            ? { ...t, playgroundEnabled: action.payload.enabled }
+            : t
+        )
+      }
     case 'REORDER_TASK': {
       const empTasks = state.tasks.filter(t => t.assignedTo === action.payload.employeeId)
       const sorted   = [...empTasks].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
