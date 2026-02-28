@@ -2,10 +2,10 @@ import { useState, useRef, useEffect } from 'react'
 import {
   X, Plus, Trash2, Bot, Send, CheckCircle, Sparkles,
   Link2, FileText, AlertCircle, ChevronDown, ChevronUp, Loader2,
-  ArrowUp, ArrowDown, GripVertical, User, RotateCcw, FlaskConical
+  ArrowUp, ArrowDown, GripVertical, User, RotateCcw, FlaskConical, Upload
 } from 'lucide-react'
 import { useApp } from '../../context/AppContext'
-import type { Employee, Task, SubTask, SupportingLink } from '../../context/AppContext'
+import type { Employee, Task, SubTask, SupportingLink, Document } from '../../context/AppContext'
 import { sendTaskChatMessage, resetTaskChat } from '../../services/aiService'
 import type { SuggestedTask, TaskChatMessage } from '../../services/aiService'
 
@@ -56,11 +56,36 @@ export default function CreateTaskModal({ employee, onClose, assignedBy = 'admin
   const [mode, setMode] = useState<Mode>('manual')
 
   // ── Manual state ──
-  const [form, setForm] = useState<ManualForm>(emptyForm())
-  const [newSubtask, setNewSubtask] = useState('')
-  const [newLinkLabel, setNewLinkLabel] = useState('')
-  const [newLinkUrl, setNewLinkUrl]   = useState('')
-  const [formError, setFormError]     = useState('')
+  const [form, setForm]           = useState<ManualForm>(emptyForm())
+  const [newSubtask, setNewSubtask]       = useState('')
+  const [newLinkLabel, setNewLinkLabel]   = useState('')
+  const [newLinkUrl, setNewLinkUrl]       = useState('')
+  const [formError, setFormError]         = useState('')
+  const [fieldErrors, setFieldErrors]     = useState<{ title?: string; description?: string; inputPrompt?: string }>({})
+  const docUploadRef = useRef<HTMLInputElement>(null)
+
+  // Determine the uploaderID for the current creator to scope visible documents
+  const uploaderId = assignedBy === 'mentor' ? (state.currentUserId ?? assignedBy) : assignedBy
+  const myDocs     = state.documents.filter(d => d.uploadedBy === uploaderId)
+
+  // Inline document upload — creates a doc, dispatches it, and auto-selects it
+  const handleInlineDocUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const newDoc: Document = {
+      id:         `doc-${Date.now()}`,
+      name:       file.name,
+      type:       file.name.split('.').pop()?.toUpperCase() ?? 'FILE',
+      size:       `${(file.size / 1024 / 1024).toFixed(1)} MB`,
+      status:     'processed',
+      uploadedBy: uploaderId ?? assignedBy,
+      date:       new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      content:    `Document: ${file.name}.`,
+    }
+    dispatch({ type: 'ADD_DOCUMENT', payload: newDoc })
+    setForm(f => ({ ...f, supportingDocIds: [...f.supportingDocIds, newDoc.id] }))
+    e.target.value = ''
+  }
 
   // ── AI playground state (for AI mode — mirrors manual form's flag) ──
   const [aiPlayground, setAiPlayground] = useState(false)
@@ -103,9 +128,17 @@ export default function CreateTaskModal({ employee, onClose, assignedBy = 'admin
     }))
 
   const submitManual = () => {
-    if (!form.title.trim()) { setFormError('Task title is required.'); return }
-    if (!form.description.trim()) { setFormError('Description is required.'); return }
-    if (form.requiresInput && !form.inputPrompt.trim()) { setFormError('Please add a prompt for the employee input.'); return }
+    const errs: typeof fieldErrors = {}
+    if (!form.title.trim())       errs.title       = 'Task title is required.'
+    if (!form.description.trim()) errs.description  = 'Description is required.'
+    if (form.requiresInput && !form.inputPrompt.trim()) errs.inputPrompt = 'Input prompt is required when employee input is enabled.'
+
+    if (Object.keys(errs).length > 0) {
+      setFieldErrors(errs)
+      setFormError('Please fill in all required fields before submitting.')
+      return
+    }
+    setFieldErrors({})
     setFormError('')
 
     const task: Task = {
@@ -279,10 +312,13 @@ export default function CreateTaskModal({ employee, onClose, assignedBy = 'admin
                 <label className="block text-xs font-semibold text-brown-600 mb-1.5">Task Title *</label>
                 <input
                   type="text" value={form.title}
-                  onChange={e => { setForm(f => ({ ...f, title: e.target.value })); setFormError('') }}
+                  onChange={e => { setForm(f => ({ ...f, title: e.target.value })); setFieldErrors(fe => ({ ...fe, title: undefined })); setFormError('') }}
                   placeholder="e.g. Complete security training"
-                  className="input-field text-sm py-2.5"
+                  className={`input-field text-sm py-2.5 ${fieldErrors.title ? 'border-red-400 focus:ring-red-300' : ''}`}
                 />
+                {fieldErrors.title && (
+                  <p className="flex items-center gap-1 text-xs text-red-600 mt-1"><AlertCircle size={11} />{fieldErrors.title}</p>
+                )}
               </div>
 
               {/* Description */}
@@ -290,11 +326,14 @@ export default function CreateTaskModal({ employee, onClose, assignedBy = 'admin
                 <label className="block text-xs font-semibold text-brown-600 mb-1.5">Description *</label>
                 <textarea
                   value={form.description}
-                  onChange={e => { setForm(f => ({ ...f, description: e.target.value })); setFormError('') }}
+                  onChange={e => { setForm(f => ({ ...f, description: e.target.value })); setFieldErrors(fe => ({ ...fe, description: undefined })); setFormError('') }}
                   placeholder="What should the employee do and why?"
                   rows={3}
-                  className="input-field text-sm py-2.5 resize-none"
+                  className={`input-field text-sm py-2.5 resize-none ${fieldErrors.description ? 'border-red-400 focus:ring-red-300' : ''}`}
                 />
+                {fieldErrors.description && (
+                  <p className="flex items-center gap-1 text-xs text-red-600 mt-1"><AlertCircle size={11} />{fieldErrors.description}</p>
+                )}
               </div>
 
               {/* Category + Time + Priority */}
@@ -340,22 +379,41 @@ export default function CreateTaskModal({ employee, onClose, assignedBy = 'admin
                 </div>
               </div>
 
-              {/* Supporting Docs */}
-              {state.documents.length > 0 && (
-                <div>
-                  <label className="block text-xs font-semibold text-brown-600 mb-2">Supporting Documents <span className="text-brown-400 font-normal">(optional)</span></label>
+              {/* Supporting Docs — only current user's uploads + inline upload */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-xs font-semibold text-brown-600">
+                    Supporting Documents <span className="text-brown-400 font-normal">(optional)</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => docUploadRef.current?.click()}
+                    className="flex items-center gap-1 text-xs font-semibold text-teal-600 border border-teal-200 bg-teal-50 hover:bg-teal-100 px-2.5 py-1 rounded-lg transition-colors"
+                  >
+                    <Upload size={11} /> Upload &amp; Attach
+                  </button>
+                  <input ref={docUploadRef} type="file" className="hidden" accept=".pdf,.doc,.docx,.txt,.png,.jpg" onChange={handleInlineDocUpload} />
+                </div>
+                {myDocs.length === 0 ? (
+                  <div className="border border-dashed border-brown-200 rounded-lg p-4 text-center">
+                    <p className="text-xs text-brown-400">No documents yet. Upload one above to attach it.</p>
+                  </div>
+                ) : (
                   <div className="space-y-1.5">
-                    {state.documents.map(doc => (
+                    {myDocs.map(doc => (
                       <label key={doc.id} className={`flex items-center gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-colors ${form.supportingDocIds.includes(doc.id) ? 'border-brown-400 bg-brown-50' : 'border-brown-100 hover:border-brown-200'}`}>
                         <input type="checkbox" checked={form.supportingDocIds.includes(doc.id)} onChange={() => toggleDoc(doc.id)} className="accent-brown-600" />
                         <FileText size={13} className="text-red-500 flex-shrink-0" />
                         <span className="text-sm text-brown-700 truncate flex-1">{doc.name}</span>
                         <span className="text-xs text-brown-400">{doc.type}</span>
+                        {form.supportingDocIds.includes(doc.id) && (
+                          <span className="text-[10px] font-semibold bg-teal-100 text-teal-700 px-1.5 py-0.5 rounded-full flex-shrink-0">Attached</span>
+                        )}
                       </label>
                     ))}
                   </div>
-                </div>
-              )}
+                )}
+              </div>
 
               {/* Supporting Links */}
               <div>
@@ -395,11 +453,14 @@ export default function CreateTaskModal({ employee, onClose, assignedBy = 'admin
                     <label className="block text-xs font-semibold text-brown-600 mb-1.5">Input Prompt *</label>
                     <textarea
                       value={form.inputPrompt}
-                      onChange={e => { setForm(f => ({ ...f, inputPrompt: e.target.value })); setFormError('') }}
+                      onChange={e => { setForm(f => ({ ...f, inputPrompt: e.target.value })); setFieldErrors(fe => ({ ...fe, inputPrompt: undefined })); setFormError('') }}
                       placeholder="What should the employee write or submit? e.g. 'Describe 3 things you learned…'"
                       rows={2}
-                      className="input-field text-sm py-2 resize-none"
+                      className={`input-field text-sm py-2 resize-none ${fieldErrors.inputPrompt ? 'border-red-400 focus:ring-red-300' : ''}`}
                     />
+                    {fieldErrors.inputPrompt && (
+                      <p className="flex items-center gap-1 text-xs text-red-600 mt-1"><AlertCircle size={11} />{fieldErrors.inputPrompt}</p>
+                    )}
                   </div>
                 )}
               </div>
