@@ -339,22 +339,13 @@ function MenteeCard({
           <div className="w-full h-2 bg-brown-100 rounded-full overflow-hidden">
             <div className={`h-full rounded-full ${mentee.risk === 'high' ? 'bg-red-400' : 'bg-teal-500'}`} style={{ width: `${computedProgress}%` }} />
           </div>
-        ) : (
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <div className="flex justify-between text-xs text-brown-500 mb-1 font-medium"><span>Progress</span><span>{actualProgress}%</span></div>
-              <div className="w-full h-2 bg-brown-100 rounded-full overflow-hidden">
-                <div className={`h-full rounded-full ${mentee.risk === 'high' ? 'bg-red-400' : 'bg-teal-500'}`} style={{ width: `${actualProgress}%` }} />
-              </div>
-            </div>
-            <div>
-              <div className="flex justify-between text-xs text-brown-500 mb-1 font-medium"><span>My Tasks</span><span>{done}/{myTasks.length}</span></div>
-              <div className="w-full h-2 bg-brown-100 rounded-full overflow-hidden">
-                <div className="h-full rounded-full bg-teal-500" style={{ width: myTasks.length > 0 ? `${(done / myTasks.length) * 100}%` : '0%' }} />
-              </div>
-            </div>
+        </div>
+        <div>
+          <div className="flex justify-between text-xs text-brown-500 mb-1 font-medium"><span>My Tasks</span><span>{done}/{myTasks.length}</span></div>
+          <div className="w-full h-2 bg-brown-100 rounded-full overflow-hidden">
+            <div className="h-full rounded-full bg-teal-500" style={{ width: myTasks.length > 0 ? `${(done / myTasks.length) * 100}%` : '0%' }} />
           </div>
-        )}
+        </div>
       </div>
 
       {/* Resume status */}
