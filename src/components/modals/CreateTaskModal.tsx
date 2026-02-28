@@ -68,22 +68,28 @@ export default function CreateTaskModal({ employee, onClose, assignedBy = 'admin
   const uploaderId = assignedBy === 'mentor' ? (state.currentUserId ?? assignedBy) : assignedBy
   const myDocs     = state.documents.filter(d => d.uploadedBy === uploaderId)
 
-  // Inline document upload — creates a doc, dispatches it, and auto-selects it
+  // Inline document upload — reads file as base64, creates a doc, dispatches it, and auto-selects it
   const handleInlineDocUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    const newDoc: Document = {
-      id:         `doc-${Date.now()}`,
-      name:       file.name,
-      type:       file.name.split('.').pop()?.toUpperCase() ?? 'FILE',
-      size:       `${(file.size / 1024 / 1024).toFixed(1)} MB`,
-      status:     'processed',
-      uploadedBy: uploaderId ?? assignedBy,
-      date:       new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      content:    `Document: ${file.name}.`,
+    const docId = `doc-${Date.now()}`
+    const reader = new FileReader()
+    reader.onload = () => {
+      const newDoc: Document = {
+        id:         docId,
+        name:       file.name,
+        type:       file.name.split('.').pop()?.toUpperCase() ?? 'FILE',
+        size:       `${(file.size / 1024 / 1024).toFixed(1)} MB`,
+        status:     'processed',
+        uploadedBy: uploaderId ?? assignedBy,
+        date:       new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        content:    `Document: ${file.name}.`,
+        fileData:   reader.result as string,
+      }
+      dispatch({ type: 'ADD_DOCUMENT', payload: newDoc })
+      setForm(f => ({ ...f, supportingDocIds: [...f.supportingDocIds, docId] }))
     }
-    dispatch({ type: 'ADD_DOCUMENT', payload: newDoc })
-    setForm(f => ({ ...f, supportingDocIds: [...f.supportingDocIds, newDoc.id] }))
+    reader.readAsDataURL(file)
     e.target.value = ''
   }
 

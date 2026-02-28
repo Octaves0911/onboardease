@@ -400,17 +400,22 @@ function OverviewSection({
   const handleDocUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    const newDoc: Document = {
-      id:          `doc-${Date.now()}`,
-      name:        file.name,
-      type:        file.name.split('.').pop()?.toUpperCase() ?? 'FILE',
-      size:        `${(file.size / 1024 / 1024).toFixed(1)} MB`,
-      status:      'processed',
-      uploadedBy:  currentMentor.id,   // scoped to this mentor
-      date:        new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      content:     `Document: ${file.name}. Contains mentor reference material.`,
+    const reader = new FileReader()
+    reader.onload = () => {
+      const newDoc: Document = {
+        id:         `doc-${Date.now()}`,
+        name:       file.name,
+        type:       file.name.split('.').pop()?.toUpperCase() ?? 'FILE',
+        size:       `${(file.size / 1024 / 1024).toFixed(1)} MB`,
+        status:     'processed',
+        uploadedBy: currentMentor.id,
+        date:       new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        content:    `Document: ${file.name}. Contains mentor reference material.`,
+        fileData:   reader.result as string,
+      }
+      dispatch({ type: 'ADD_DOCUMENT', payload: newDoc })
     }
-    dispatch({ type: 'ADD_DOCUMENT', payload: newDoc })
+    reader.readAsDataURL(file)
     e.target.value = ''
   }
 
@@ -695,17 +700,22 @@ function DocumentsSection({ currentMentorId }: { currentMentorId: string }) {
   const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    const newDoc: Document = {
-      id:         `doc-${Date.now()}`,
-      name:       file.name,
-      type:       file.name.split('.').pop()?.toUpperCase() ?? 'FILE',
-      size:       `${(file.size / 1024 / 1024).toFixed(1)} MB`,
-      status:     'processed',
-      uploadedBy: currentMentorId,
-      date:       new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      content:    `Document: ${file.name}. Mentor reference material.`,
+    const reader = new FileReader()
+    reader.onload = () => {
+      const newDoc: Document = {
+        id:         `doc-${Date.now()}`,
+        name:       file.name,
+        type:       file.name.split('.').pop()?.toUpperCase() ?? 'FILE',
+        size:       `${(file.size / 1024 / 1024).toFixed(1)} MB`,
+        status:     'processed',
+        uploadedBy: currentMentorId,
+        date:       new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        content:    `Document: ${file.name}. Mentor reference material.`,
+        fileData:   reader.result as string,
+      }
+      dispatch({ type: 'ADD_DOCUMENT', payload: newDoc })
     }
-    dispatch({ type: 'ADD_DOCUMENT', payload: newDoc })
+    reader.readAsDataURL(file)
     e.target.value = ''
   }
 
