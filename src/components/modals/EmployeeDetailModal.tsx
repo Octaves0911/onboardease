@@ -50,7 +50,14 @@ export default function EmployeeDetailModal({ employee, onClose }: Props) {
   const currentRole = (state.currentRole ?? 'admin') as FeedbackVisibility
   const currentName = currentRole === 'admin' ? 'Admin'
     : currentRole === 'hr' ? 'HR Manager'
-    : initialMentors.find(m => m.id === state.currentUserId)?.name ?? 'Mentor'
+    : ([...initialMentors, ...state.mentors].find(m => m.id === state.currentUserId)?.name ?? 'Mentor')
+
+  // Returns true if the current logged-in user created this task
+  const canEdit = (task: Task): boolean => {
+    if (currentRole !== task.assignedBy) return false
+    if (currentRole === 'mentor') return task.assignedByName === currentName
+    return true
+  }
 
   // uploaderId for scoping documents when editing a task (mirrors CreateTaskModal logic)
   const uploaderId = currentRole === 'mentor' ? (state.currentUserId ?? 'mentor') : currentRole
@@ -347,8 +354,8 @@ export default function EmployeeDetailModal({ employee, onClose }: Props) {
                         </button>
                       </div>
 
-                      {/* Remove confirmation inline */}
-                      {isPendingRemove && (
+                      {/* Remove confirmation inline — only for task creator */}
+                      {isPendingRemove && canEdit(task) && (
                         <div className="bg-red-50 border-t border-red-200 px-4 py-2.5 flex items-center justify-between gap-3">
                           <p className="text-xs text-red-700 font-medium">Remove this task? This cannot be undone.</p>
                           <div className="flex gap-2 flex-shrink-0">

@@ -29,6 +29,7 @@ export default function AdminPanel({ activeSection = 'overview', isHR = false }:
   const [showAddMentor,    setShowAddMentor]    = useState(false)
   const [confirmRemoveMentor, setConfirmRemoveMentor] = useState<MentorUser | null>(null)
   const [confirmDeleteDoc,    setConfirmDeleteDoc]    = useState<string | null>(null)
+  const [docInUseError,       setDocInUseError]       = useState<string | null>(null)
   const [showBulkGenerate,    setShowBulkGenerate]    = useState(false)
   const [docInUseError,       setDocInUseError]       = useState<string | null>(null)
   const docUploadRef = useRef<HTMLInputElement>(null)
@@ -342,27 +343,50 @@ export default function AdminPanel({ activeSection = 'overview', isHR = false }:
                     )}
                     {/* Inline delete confirmation */}
                     {confirmDeleteDoc === doc.id && (
-                      <div className="flex items-center justify-between gap-3 px-6 py-3 bg-red-50 border-t border-red-100">
-                        <p className="text-xs text-red-700 font-medium">
-                          Delete <strong>{doc.name}</strong>? This cannot be undone.
-                        </p>
-                        <div className="flex gap-2 flex-shrink-0">
+                      <div className="px-6 py-3 bg-red-50 border-t border-red-100 space-y-2">
+                        {docInUseError && confirmDeleteDoc === doc.id && (
+                          <p className="text-xs text-red-700 font-semibold flex items-center gap-1">
+                            ⚠️ {docInUseError}
+                          </p>
+                        )}
+                        {!docInUseError && (
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-xs text-red-700 font-medium">
+                              Delete <strong>{doc.name}</strong>? This cannot be undone.
+                            </p>
+                            <div className="flex gap-2 flex-shrink-0">
+                              <button
+                                onClick={() => { setConfirmDeleteDoc(null); setDocInUseError(null) }}
+                                className="text-xs px-3 py-1.5 rounded-lg border border-brown-200 bg-white text-brown-600 hover:bg-brown-50 transition-colors"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                onClick={() => {
+                                  const inUse = state.tasks.some(t => (t.supportingDocs ?? []).includes(doc.id))
+                                  if (inUse) {
+                                    setDocInUseError(`"${doc.name}" is currently attached to one or more tasks and cannot be deleted.`)
+                                    return
+                                  }
+                                  dispatch({ type: 'REMOVE_DOCUMENT', payload: { id: doc.id } })
+                                  setConfirmDeleteDoc(null)
+                                  setDocInUseError(null)
+                                }}
+                                className="text-xs px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold transition-colors flex items-center gap-1"
+                              >
+                                <Trash2 size={11} /> Delete
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                        {docInUseError && confirmDeleteDoc === doc.id && (
                           <button
-                            onClick={() => setConfirmDeleteDoc(null)}
+                            onClick={() => { setConfirmDeleteDoc(null); setDocInUseError(null) }}
                             className="text-xs px-3 py-1.5 rounded-lg border border-brown-200 bg-white text-brown-600 hover:bg-brown-50 transition-colors"
                           >
-                            Cancel
+                            Dismiss
                           </button>
-                          <button
-                            onClick={() => {
-                              dispatch({ type: 'REMOVE_DOCUMENT', payload: { id: doc.id } })
-                              setConfirmDeleteDoc(null)
-                            }}
-                            className="text-xs px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold transition-colors flex items-center gap-1"
-                          >
-                            <Trash2 size={11} /> Delete
-                          </button>
-                        </div>
+                        )}
                       </div>
                     )}
                   </div>

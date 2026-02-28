@@ -326,7 +326,9 @@ function MenteeCard({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${badgeCls}`}>{badgeLabel}</span>
+          {allTasks.length > 0 && (
+            <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${badgeCls}`}>{badgeLabel}</span>
+          )}
           <ChevronRight size={16} className="text-brown-300 group-hover:text-teal-500 transition-colors" />
         </div>
       </div>
@@ -337,13 +339,22 @@ function MenteeCard({
           <div className="w-full h-2 bg-brown-100 rounded-full overflow-hidden">
             <div className={`h-full rounded-full ${mentee.risk === 'high' ? 'bg-red-400' : 'bg-teal-500'}`} style={{ width: `${computedProgress}%` }} />
           </div>
-        </div>
-        <div>
-          <div className="flex justify-between text-xs text-brown-500 mb-1 font-medium"><span>My Tasks</span><span>{done}/{myTasks.length}</span></div>
-          <div className="w-full h-2 bg-brown-100 rounded-full overflow-hidden">
-            <div className="h-full rounded-full bg-teal-500" style={{ width: myTasks.length > 0 ? `${(done / myTasks.length) * 100}%` : '0%' }} />
+        ) : (
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <div className="flex justify-between text-xs text-brown-500 mb-1 font-medium"><span>Progress</span><span>{actualProgress}%</span></div>
+              <div className="w-full h-2 bg-brown-100 rounded-full overflow-hidden">
+                <div className={`h-full rounded-full ${mentee.risk === 'high' ? 'bg-red-400' : 'bg-teal-500'}`} style={{ width: `${actualProgress}%` }} />
+              </div>
+            </div>
+            <div>
+              <div className="flex justify-between text-xs text-brown-500 mb-1 font-medium"><span>My Tasks</span><span>{done}/{myTasks.length}</span></div>
+              <div className="w-full h-2 bg-brown-100 rounded-full overflow-hidden">
+                <div className="h-full rounded-full bg-teal-500" style={{ width: myTasks.length > 0 ? `${(done / myTasks.length) * 100}%` : '0%' }} />
+              </div>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Resume status */}
@@ -459,7 +470,7 @@ function OverviewSection({
         {[
           { icon: <Users size={20} />,         label: 'My Mentees',    value: myMentees.length,                                                                                            color: 'bg-teal-50 text-teal-700'   },
           { icon: <AlertTriangle size={20} />, label: 'At Risk',       value: myMentees.filter(e => e.risk === 'high').length,                                                              color: 'bg-red-50 text-red-600'     },
-          { icon: <ListChecks size={20} />,    label: 'Tasks Assigned', value: state.tasks.filter(t => t.assignedBy === 'mentor' && myMentees.some(e => e.id === t.assignedTo)).length,    color: 'bg-brown-50 text-brown-600' },
+          { icon: <ListChecks size={20} />,    label: 'Tasks Assigned', value: state.tasks.filter(t => myMentees.some(e => e.id === t.assignedTo)).length,    color: 'bg-brown-50 text-brown-600' },
           { icon: <CheckCircle size={20} />,   label: 'With Resumes',  value: myMentees.filter(e => !!e.resumeFileName).length,                                                            color: 'bg-green-50 text-green-600' },
         ].map(s => (
           <div key={s.label} className="card flex items-center gap-4">
@@ -496,7 +507,8 @@ function OverviewSection({
               )
             })
           )}
-          {/* ── AI Insights — below mentee cards, same as Admin/HR layout ── */}
+
+          {/* AI Chat Widget — below mentee cards */}
           <AdminChatWidget
             employeeCount={myMentees.length}
             atRiskCount={myMentees.filter(e => e.risk === 'high').length}
@@ -506,8 +518,39 @@ function OverviewSection({
           />
         </div>
 
-        {/* ── Right panel: My Documents only ── */}
+        {/* ── Right panel: AI Insights card + My Documents ── */}
         <div className="space-y-5">
+          {/* AI Insights — static insight cards like Admin/HR portal */}
+          <div className="card">
+            <h3 className="font-bold text-brown-900 mb-4 flex items-center gap-2">
+              <Bot size={16} /> AI Insights
+            </h3>
+            <div className="space-y-3">
+              {myMentees.filter(e => e.risk === 'high').length > 0 && (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-800">
+                  ⚠️ <strong>{myMentees.filter(e => e.risk === 'high').map(e => e.name).join(', ')}</strong> — low engagement. Schedule a check-in.
+                </div>
+              )}
+              <div className="bg-green-50 border border-green-200 rounded-xl p-3 text-xs text-green-800">
+                ✅ {state.documents.filter(d => d.status === 'processed' && d.uploadedBy === currentMentor.id).length} of your documents processed and ready.
+              </div>
+              {myMentees.filter(t => !state.tasks.some(tk => tk.assignedTo === t.id)).length > 0 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800">
+                  📋 <strong>{myMentees.filter(t => !state.tasks.some(tk => tk.assignedTo === t.id)).map(e => e.name).join(', ')}</strong> — no tasks assigned yet.
+                </div>
+              )}
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-800">
+                💡 Click any mentee card to view full details, tasks and progress.
+              </div>
+              {avgProgress >= 70 && (
+                <div className="bg-teal-50 border border-teal-200 rounded-xl p-3 text-xs text-teal-800">
+                  🚀 Your mentees are averaging <strong>{avgProgress}%</strong> progress — great work!
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* My Documents */}
           <div className="card space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-brown-900 flex items-center gap-2">
@@ -566,7 +609,8 @@ function MenteesSection({ myMentees }: { myMentees: Employee[] }) {
     m.role.toLowerCase().includes(search.toLowerCase())
   )
 
-  const totalMentorTasks = state.tasks.filter(t => t.assignedBy === 'mentor' && myMentees.some(m => m.id === t.assignedTo))
+  // Count ALL tasks assigned to this mentor's mentees (not just mentor-created)
+  const totalMentorTasks = state.tasks.filter(t => myMentees.some(m => m.id === t.assignedTo))
   const doneMentorTasks  = totalMentorTasks.filter(t => t.status === 'done')
 
   return (
@@ -611,19 +655,31 @@ function MenteesSection({ myMentees }: { myMentees: Employee[] }) {
                       style={{ background: mentee.color }}>{mentee.initials}</div>
                     <span className="text-sm font-semibold text-brown-900 truncate">{mentee.name}</span>
                   </div>
-                  <div>
-                    <div className="w-full h-2.5 bg-brown-100 rounded-full overflow-hidden">
-                      <div className={`h-full rounded-full ${mentee.risk === 'high' ? 'bg-red-400' : 'bg-teal-500'}`} style={{ width: `${pct}%` }} />
+                  {tasks.length === 0 ? (
+                    <div className="flex items-center gap-1.5 py-1">
+                      <AlertTriangle size={12} className="text-amber-500 flex-shrink-0" />
+                      <span className="text-xs font-semibold text-amber-600">No tasks assigned</span>
                     </div>
-                    <div className="flex items-center gap-3 mt-1">
-                      <span className="text-xs text-green-600 font-medium">{done} done</span>
-                      <span className="text-xs text-blue-500 font-medium">{inProg} in progress</span>
-                      <span className="text-xs text-amber-500 font-medium">{pending} pending</span>
+                  ) : (
+                    <div>
+                      <div className="w-full h-2.5 bg-brown-100 rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full ${mentee.risk === 'high' ? 'bg-red-400' : 'bg-teal-500'}`} style={{ width: `${pct}%` }} />
+                      </div>
+                      <div className="flex items-center gap-3 mt-1">
+                        <span className="text-xs text-green-600 font-medium">{done} done</span>
+                        <span className="text-xs text-blue-500 font-medium">{inProg} in progress</span>
+                        <span className="text-xs text-amber-500 font-medium">{pending} pending</span>
+                      </div>
                     </div>
-                  </div>
+                  )}
                   <div className="text-right flex-shrink-0 w-12">
-                    <span className={`text-sm font-bold ${mentee.risk === 'high' ? 'text-red-600' : 'text-teal-600'}`}>{pct}%</span>
-                    {mentee.risk === 'high' && <p className="text-[10px] text-red-500 font-semibold">At Risk</p>}
+                    {tasks.length === 0
+                      ? <span className="text-xs text-amber-500 font-semibold">—</span>
+                      : <>
+                          <span className={`text-sm font-bold ${mentee.risk === 'high' ? 'text-red-600' : 'text-teal-600'}`}>{pct}%</span>
+                          {mentee.risk === 'high' && <p className="text-[10px] text-red-500 font-semibold">At Risk</p>}
+                        </>
+                    }
                   </div>
                 </div>
               )
@@ -823,15 +879,38 @@ function DocumentsSection({ currentMentorId }: { currentMentorId: string }) {
                   </div>
                 )}
                 {confirmDel === doc.id && (
-                  <div className="flex items-center justify-between gap-3 px-6 py-3 bg-red-50 border-t border-red-100">
-                    <p className="text-xs text-red-700 font-medium">Delete <strong>{doc.name}</strong>? This cannot be undone.</p>
-                    <div className="flex gap-2 flex-shrink-0">
-                      <button onClick={() => setConfirmDel(null)} className="text-xs px-3 py-1.5 rounded-lg border border-brown-200 bg-white text-brown-600 hover:bg-brown-50 transition-colors">Cancel</button>
-                      <button onClick={() => { dispatch({ type: 'REMOVE_DOCUMENT', payload: { id: doc.id } }); setConfirmDel(null) }}
-                        className="text-xs px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold transition-colors flex items-center gap-1">
-                        <Trash2 size={11} /> Delete
+                  <div className="px-6 py-3 bg-red-50 border-t border-red-100 space-y-2">
+                    {docInUseError && (
+                      <p className="text-xs text-red-700 font-semibold flex items-center gap-1">
+                        ⚠️ {docInUseError}
+                      </p>
+                    )}
+                    {!docInUseError && (
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-xs text-red-700 font-medium">Delete <strong>{doc.name}</strong>? This cannot be undone.</p>
+                        <div className="flex gap-2 flex-shrink-0">
+                          <button onClick={() => { setConfirmDel(null); setDocInUseError(null) }} className="text-xs px-3 py-1.5 rounded-lg border border-brown-200 bg-white text-brown-600 hover:bg-brown-50 transition-colors">Cancel</button>
+                          <button onClick={() => {
+                            const inUse = state.tasks.some(t => (t.supportingDocs ?? []).includes(doc.id))
+                            if (inUse) {
+                              setDocInUseError(`"${doc.name}" is currently attached to one or more tasks and cannot be deleted.`)
+                              return
+                            }
+                            dispatch({ type: 'REMOVE_DOCUMENT', payload: { id: doc.id } })
+                            setConfirmDel(null)
+                            setDocInUseError(null)
+                          }}
+                            className="text-xs px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold transition-colors flex items-center gap-1">
+                            <Trash2 size={11} /> Delete
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {docInUseError && (
+                      <button onClick={() => { setConfirmDel(null); setDocInUseError(null) }} className="text-xs px-3 py-1.5 rounded-lg border border-brown-200 bg-white text-brown-600 hover:bg-brown-50 transition-colors">
+                        Dismiss
                       </button>
-                    </div>
+                    )}
                   </div>
                 )}
               </div>
