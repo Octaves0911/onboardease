@@ -91,8 +91,8 @@ export default function AdminPanel({ activeSection = 'overview', isHR = false }:
       />
       <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
 
-        {/* Stats — hidden on Mentors tab */}
-        {activeSection !== 'mentors' && <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Stats — hidden on Mentors and Docs tabs */}
+        {activeSection !== 'mentors' && activeSection !== 'docs' && <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[
             { icon: <Users size={20} />,        label: 'Total Employees', value: state.employees.length, sub: `${onboarding} onboarding`,  color: 'bg-blue-50 text-blue-600'   },
             { icon: <TrendingUp size={20} />,    label: 'Avg Progress',   value: `${avgProg}%`,          sub: 'across all hires',           color: 'bg-green-50 text-green-600' },

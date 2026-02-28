@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { CheckCircle, Clock, BookOpen, Users, Calendar, Link2, Flame, Trophy, Bell, FileText, ChevronRight } from 'lucide-react'
+import { CheckCircle, Clock, BookOpen, Users, Calendar, Link2, Flame, Trophy, Bell, FileText, ChevronRight, MessageSquare, Eye } from 'lucide-react'
 import { useApp, initialMentors } from '../../context/AppContext'
 import AIChatWidget from '../common/AIChatWidget'
 
@@ -73,6 +73,17 @@ export default function NewHireDashboard() {
           </div>
         </div>
 
+        {/* Bio */}
+        {employee.bio && (
+          <div className="bg-white border border-brown-100 rounded-2xl p-4 flex gap-3 shadow-sm">
+            <MessageSquare size={16} className="text-brown-400 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-xs font-semibold text-brown-500 mb-0.5">About Me</p>
+              <p className="text-sm text-brown-700 leading-relaxed">{employee.bio}</p>
+            </div>
+          </div>
+        )}
+
         {/* Stats */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[
@@ -116,8 +127,8 @@ export default function NewHireDashboard() {
             ) : (
               <div className="space-y-2.5">
                 {displayed.map(task => (
+                  <div key={task.id}>
                   <div
-                    key={task.id}
                     onClick={() => toggleTaskStatus(task.id, task.status)}
                     className={`flex items-center gap-3 p-3.5 rounded-xl border transition-all duration-200 cursor-pointer group ${
                       task.status === 'done' ? 'border-green-200 bg-green-50/50' :
@@ -151,6 +162,23 @@ export default function NewHireDashboard() {
                       {task.status === 'in-progress' && <span className="badge-orange text-xs py-1">In Progress</span>}
                       {task.status === 'pending' && <span className="text-xs text-brown-400 font-medium">Click to start</span>}
                     </div>
+                  </div>
+
+                  {/* Feedback visible to employee */}
+                  {task.status === 'done' && (task.feedback ?? []).filter(fb => fb.visibility.includes('employee')).length > 0 && (
+                    <div className="mt-1 space-y-1.5" onClick={e => e.stopPropagation()}>
+                      {(task.feedback ?? []).filter(fb => fb.visibility.includes('employee')).map(fb => (
+                        <div key={fb.id} className="bg-green-50 border border-green-100 rounded-lg px-3 py-2">
+                          <div className="flex items-center gap-2 mb-1">
+                            <MessageSquare size={10} className="text-green-600 flex-shrink-0" />
+                            <span className="text-xs font-semibold text-green-700">{fb.addedBy}</span>
+                            <span className="text-xs text-brown-400 ml-auto">{new Date(fb.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                          </div>
+                          <p className="text-xs text-brown-700">{fb.text}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   </div>
                 ))}
               </div>

@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react'
-import { X, Upload, User, Mail, Briefcase, Users, Calendar, CheckCircle, UserCheck } from 'lucide-react'
+import { X, Upload, User, Mail, Briefcase, Users, Calendar, CheckCircle, UserCheck, FileText } from 'lucide-react'
 import { useApp, initialMentors, Employee } from '../../context/AppContext'
 
 interface Props { onClose: () => void }
@@ -31,7 +31,7 @@ function simulateResumeContent(role: string, name: string): string {
 
 export default function AddEmployeeModal({ onClose }: Props) {
   const { state, dispatch } = useApp()
-  const [form, setForm] = useState({ name: '', email: '', role: '', team: TEAMS[0], mentorId: '', startDate: new Date().toISOString().split('T')[0] })
+  const [form, setForm] = useState({ name: '', email: '', role: '', team: TEAMS[0], mentorId: '', startDate: new Date().toISOString().split('T')[0], bio: '' })
   const [resumeFile, setResumeFile] = useState<File | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -75,6 +75,7 @@ export default function AddEmployeeModal({ onClose }: Props) {
       initials, color,
       resumeFileName: resumeFile?.name,
       resumeContent,
+      bio: form.bio.trim() || undefined,
     }
 
     dispatch({ type: 'ADD_EMPLOYEE', payload: employee })
@@ -183,6 +184,22 @@ export default function AddEmployeeModal({ onClose }: Props) {
               ))}
             </div>
             {errors.mentorId && <p className="text-red-500 text-xs mt-1">{errors.mentorId}</p>}
+          </div>
+
+          {/* Bio */}
+          <div>
+            <label className="block text-sm font-semibold text-brown-800 mb-1.5">
+              <span className="flex items-center gap-1.5"><FileText size={14} /> Short Bio <span className="text-brown-400 font-normal">(optional)</span></span>
+            </label>
+            <textarea
+              className="input-field resize-none text-sm"
+              rows={3}
+              placeholder="A short intro about this new hire — background, interests, fun fact…"
+              value={form.bio}
+              onChange={e => set('bio', e.target.value)}
+              maxLength={300}
+            />
+            <p className="text-xs text-brown-400 mt-1 text-right">{form.bio.length}/300</p>
           </div>
 
           {/* Resume upload */}

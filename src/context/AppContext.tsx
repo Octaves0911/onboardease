@@ -19,6 +19,7 @@ export interface Employee {
   color: string
   resumeFileName?: string
   resumeContent?: string   // simulated extracted text
+  bio?: string             // short bio for new hire
 }
 
 export interface SubTask {
@@ -30,6 +31,17 @@ export interface SubTask {
 export interface SupportingLink {
   label: string
   url: string
+}
+
+export type FeedbackVisibility = 'admin' | 'hr' | 'mentor' | 'employee'
+
+export interface TaskFeedback {
+  id: string
+  text: string
+  addedBy: string                   // display name
+  addedByRole: FeedbackVisibility
+  createdAt: string
+  visibility: FeedbackVisibility[]  // who can see this feedback
 }
 
 export interface Task {
@@ -51,6 +63,7 @@ export interface Task {
   requiresInput?: boolean
   inputPrompt?: string
   inputValue?: string
+  feedback?: TaskFeedback[]   // feedback on completed tasks
 }
 
 export interface Document {
@@ -112,6 +125,8 @@ type Action =
   | { type: 'REMOVE_MENTOR'; payload: { id: string } }
   | { type: 'REMOVE_DOCUMENT'; payload: { id: string } }
   | { type: 'MARK_NOTIFICATIONS_READ' }
+  | { type: 'ADD_TASK_FEEDBACK'; payload: { taskId: string; feedback: TaskFeedback } }
+  | { type: 'UPDATE_EMPLOYEE_BIO'; payload: { id: string; bio: string } }
 
 // ─── Initial Data ─────────────────────────────────────────────────────────────
 
@@ -298,6 +313,22 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, documents: state.documents.filter(d => d.id !== action.payload.id) }
     case 'MARK_NOTIFICATIONS_READ':
       return { ...state, notifications: state.notifications.map(n => ({ ...n, read: true })) }
+    case 'ADD_TASK_FEEDBACK':
+      return {
+        ...state,
+        tasks: state.tasks.map(t =>
+          t.id === action.payload.taskId
+            ? { ...t, feedback: [...(t.feedback ?? []), action.payload.feedback] }
+            : t
+        ),
+      }
+    case 'UPDATE_EMPLOYEE_BIO':
+      return {
+        ...state,
+        employees: state.employees.map(e =>
+          e.id === action.payload.id ? { ...e, bio: action.payload.bio } : e
+        ),
+      }
     case 'UPDATE_EMPLOYEE_RESUME':
       return {
         ...state,

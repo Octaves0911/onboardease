@@ -1,11 +1,12 @@
 import { useState } from 'react'
+import { useState as useLocalState } from 'react'
 import {
   X, Mail, Users, Calendar, TrendingUp, CheckCircle, Clock,
   AlertCircle, FileText, Trash2, Plus, ChevronDown, ChevronUp,
-  Link2, ArrowUp, ArrowDown, GripVertical
+  Link2, ArrowUp, ArrowDown, GripVertical, MessageSquare, Eye, Send
 } from 'lucide-react'
 import { useApp, initialMentors } from '../../context/AppContext'
-import type { Employee, Task } from '../../context/AppContext'
+import type { Employee, Task, TaskFeedback, FeedbackVisibility } from '../../context/AppContext'
 import CreateTaskModal from './CreateTaskModal'
 
 interface Props {
@@ -30,12 +31,47 @@ const priorityStyle = (p?: Task['priority']) => {
 }
 const priorityLabel = (p?: Task['priority']) => p ? p.charAt(0).toUpperCase() + p.slice(1) : 'Priority'
 
+const VISIBILITY_ROLES: FeedbackVisibility[] = ['admin', 'hr', 'mentor', 'employee']
+const ROLE_LABELS: Record<FeedbackVisibility, string> = { admin: '🔑 Admin', hr: '👔 HR', mentor: '🤝 Mentor', employee: '👤 Employee' }
+
 export default function EmployeeDetailModal({ employee, onClose }: Props) {
   const { state, dispatch } = useApp()
-  const [showConfirm,    setShowConfirm]    = useState(false)
-  const [showCreateTask, setShowCreateTask] = useState(false)
-  const [expandedTask,   setExpandedTask]   = useState<Record<string, boolean>>({})
+  const [showConfirm,       setShowConfirm]       = useState(false)
+  const [showCreateTask,    setShowCreateTask]    = useState(false)
+  const [expandedTask,      setExpandedTask]      = useState<Record<string, boolean>>({})
   const [confirmRemoveTask, setConfirmRemoveTask] = useState<string | null>(null)
+  // Feedback state per task
+  const [feedbackOpen,      setFeedbackOpen]      = useState<Record<string, boolean>>({})
+  const [feedbackText,      setFeedbackText]      = useState<Record<string, string>>({})
+  const [feedbackVis,       setFeedbackVis]       = useState<Record<string, FeedbackVisibility[]>>({})
+
+  const currentRole = (state.currentRole ?? 'admin') as FeedbackVisibility
+  const currentName = currentRole === 'admin' ? 'Admin'
+    : currentRole === 'hr' ? 'HR Manager'
+    : initialMentors.find(m => m.id === state.currentUserId)?.name ?? 'Mentor'
+
+  const toggleVisibility = (taskId: string, role: FeedbackVisibility) => {
+    setFeedbackVis(prev => {
+      const curr = prev[taskId] ?? VISIBILITY_ROLES
+      return { ...prev, [taskId]: curr.includes(role) ? curr.filter(r => r !== role) : [...curr, role] }
+    })
+  }
+
+  const submitFeedback = (taskId: string) => {
+    const text = (feedbackText[taskId] ?? '').trim()
+    if (!text) return
+    const fb: TaskFeedback = {
+      id: `fb-${Date.now()}`,
+      text,
+      addedBy: currentName,
+      addedByRole: currentRole,
+      createdAt: new Date().toISOString(),
+      visibility: feedbackVis[taskId] ?? VISIBILITY_ROLES,
+    }
+    dispatch({ type: 'ADD_TASK_FEEDBACK', payload: { taskId, feedback: fb } })
+    setFeedbackText(prev => ({ ...prev, [taskId]: '' }))
+    setFeedbackOpen(prev => ({ ...prev, [taskId]: false }))
+  }
 
   const mentor  = [...initialMentors, ...state.mentors].find(m => m.id === employee.mentorId)
   const myTasks = state.tasks
@@ -51,6 +87,8 @@ export default function EmployeeDetailModal({ employee, onClose }: Props) {
   const rate    = myTasks.length > 0 ? Math.round((done.length / myTasks.length) * 100) : 0
 
   const cycleStatus = (task: Task) => {
+    // Only the task creator can revert a "done" task back to in-progress
+    if (task.status === 'done' && currentRole !== task.assignedBy) return
     const idx  = STATUS_CYCLE.indexOf(task.status)
     const next = STATUS_CYCLE[(idx + 1) % STATUS_CYCLE.length]
     dispatch({ type: 'UPDATE_TASK', payload: { id: task.id, updates: { status: next } } })
@@ -146,6 +184,17 @@ export default function EmployeeDetailModal({ employee, onClose }: Props) {
               ))}
             </div>
           </div>
+
+          {/* Bio */}
+          {employee.bio && (
+            <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 flex gap-3">
+              <MessageSquare size={16} className="text-blue-500 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-xs font-semibold text-blue-700 mb-0.5">About {employee.name.split(' ')[0]}</p>
+                <p className="text-sm text-blue-800 leading-relaxed">{employee.bio}</p>
+              </div>
+            </div>
+          )}
 
           {/* ── Task list ── */}
           <div>
@@ -243,11 +292,12 @@ export default function EmployeeDetailModal({ employee, onClose }: Props) {
                           {priorityLabel(task.priority)}
                         </button>
 
-                        {/* Status chip — click to cycle */}
+                        {/* Status chip — click to cycle; only creator can undo done */}
                         <button
                           onClick={() => cycleStatus(task)}
-                          title="Click to change status"
-                          className={`text-xs font-semibold px-2 py-1 rounded-full border flex-shrink-0 transition-colors flex items-center gap-1 ${st.chip}`}
+                          title={task.status === 'done' && currentRole !== task.assignedBy ? `Only ${task.assignedByName} can revert this task` : 'Click to change status'}
+                          disabled={task.status === 'done' && currentRole !== task.assignedBy}
+                          className={`text-xs font-semibold px-2 py-1 rounded-full border flex-shrink-0 transition-colors flex items-center gap-1 ${st.chip} ${task.status === 'done' && currentRole !== task.assignedBy ? 'opacity-60 cursor-not-allowed' : ''}`}
                         >
                           {st.icon}
                           <span>{st.label}</span>
@@ -281,6 +331,78 @@ export default function EmployeeDetailModal({ employee, onClose }: Props) {
                             <button onClick={() => setConfirmRemoveTask(null)} className="text-xs px-2.5 py-1 rounded-lg border border-brown-200 bg-white text-brown-600 hover:bg-brown-50 transition-colors">Cancel</button>
                             <button onClick={() => removeTask(task.id)} className="text-xs px-2.5 py-1 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors font-semibold">Yes, Remove</button>
                           </div>
+                        </div>
+                      )}
+
+                      {/* Feedback section — shown when task is done */}
+                      {task.status === 'done' && (
+                        <div className="border-t border-green-100 px-4 pb-3 pt-2.5 bg-green-50/30 space-y-2">
+                          {/* Existing feedback */}
+                          {(task.feedback ?? [])
+                            .filter(fb => fb.visibility.includes(currentRole))
+                            .map(fb => (
+                              <div key={fb.id} className="bg-white border border-green-100 rounded-lg p-2.5">
+                                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                  <span className={`text-xs font-semibold px-1.5 py-0.5 rounded-full border
+                                    ${fb.addedByRole === 'admin' ? 'bg-blue-50 text-blue-700 border-blue-100' :
+                                      fb.addedByRole === 'hr' ? 'bg-purple-50 text-purple-700 border-purple-100' :
+                                      fb.addedByRole === 'mentor' ? 'bg-teal-50 text-teal-700 border-teal-100' :
+                                      'bg-gray-50 text-gray-600 border-gray-100'}`}>
+                                    {fb.addedByRole === 'admin' ? '🔑' : fb.addedByRole === 'hr' ? '👔' : fb.addedByRole === 'mentor' ? '🤝' : '👤'} {fb.addedBy}
+                                  </span>
+                                  <span className="text-xs text-brown-400">{new Date(fb.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                                  <span className="ml-auto flex items-center gap-1 text-xs text-brown-400">
+                                    <Eye size={10} />{fb.visibility.map(v => ROLE_LABELS[v]).join(', ')}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-brown-700">{fb.text}</p>
+                              </div>
+                            ))}
+
+                          {/* Add feedback form */}
+                          {feedbackOpen[task.id] ? (
+                            <div className="space-y-2">
+                              <textarea
+                                className="w-full text-xs border border-green-200 rounded-lg p-2 resize-none focus:outline-none focus:ring-1 focus:ring-green-400 bg-white"
+                                rows={2}
+                                placeholder="Write feedback on this completed task…"
+                                value={feedbackText[task.id] ?? ''}
+                                onChange={e => setFeedbackText(prev => ({ ...prev, [task.id]: e.target.value }))}
+                              />
+                              {/* Visibility picker */}
+                              <div>
+                                <p className="text-xs text-brown-500 font-semibold mb-1 flex items-center gap-1"><Eye size={10} />Visible to:</p>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {VISIBILITY_ROLES.map(role => {
+                                    const selected = (feedbackVis[task.id] ?? VISIBILITY_ROLES).includes(role)
+                                    return (
+                                      <button
+                                        key={role}
+                                        onClick={() => toggleVisibility(task.id, role)}
+                                        className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${selected ? 'bg-green-600 text-white border-green-600' : 'bg-white text-brown-500 border-brown-200 hover:border-green-400'}`}
+                                      >
+                                        {ROLE_LABELS[role]}
+                                      </button>
+                                    )
+                                  })}
+                                </div>
+                              </div>
+                              <div className="flex gap-2">
+                                <button onClick={() => setFeedbackOpen(p => ({ ...p, [task.id]: false }))} className="text-xs px-3 py-1.5 rounded-lg border border-brown-200 text-brown-600 hover:bg-brown-50 transition-colors">Cancel</button>
+                                <button onClick={() => submitFeedback(task.id)} className="text-xs px-3 py-1.5 rounded-lg bg-green-600 text-white font-semibold hover:bg-green-700 transition-colors flex items-center gap-1"><Send size={10} />Submit</button>
+                              </div>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => {
+                                setFeedbackOpen(p => ({ ...p, [task.id]: true }))
+                                if (!feedbackVis[task.id]) setFeedbackVis(p => ({ ...p, [task.id]: VISIBILITY_ROLES }))
+                              }}
+                              className="text-xs font-medium text-green-700 hover:text-green-900 flex items-center gap-1 transition-colors"
+                            >
+                              <MessageSquare size={11} /> Add Feedback
+                            </button>
+                          )}
                         </div>
                       )}
 
