@@ -223,7 +223,15 @@ export default function EmployeeDetailModal({ employee, onClose }: Props) {
                               </span>
                             )}
                           </div>
-                          <p className="text-xs text-brown-400 mt-0.5">{task.category} · {task.estimatedTime}</p>
+                          <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                            <span className="text-xs text-brown-400">{task.category} · {task.estimatedTime}</span>
+                            <span className={`text-xs font-semibold px-1.5 py-0.5 rounded-full border flex-shrink-0
+                              ${task.assignedBy === 'admin'  ? 'bg-blue-50 text-blue-700 border-blue-100' :
+                                task.assignedBy === 'hr'     ? 'bg-purple-50 text-purple-700 border-purple-100' :
+                                                               'bg-teal-50 text-teal-700 border-teal-100'}`}>
+                              {task.assignedBy === 'admin' ? '🔑' : task.assignedBy === 'hr' ? '👔' : '🤝'} {task.assignedByName}
+                            </span>
+                          </div>
                         </div>
 
                         {/* Priority badge — click to cycle */}
