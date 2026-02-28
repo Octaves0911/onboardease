@@ -30,7 +30,12 @@ export default function AdminPanel({ activeSection = 'overview', isHR = false }:
   const [confirmRemoveMentor, setConfirmRemoveMentor] = useState<MentorUser | null>(null)
   const [confirmDeleteDoc,    setConfirmDeleteDoc]    = useState<string | null>(null)
   const [showBulkGenerate,    setShowBulkGenerate]    = useState(false)
+  const [docInUseError,       setDocInUseError]       = useState<string | null>(null)
   const docUploadRef = useRef<HTMLInputElement>(null)
+
+  // Check if a document is referenced by any task's supportingDocs
+  const isDocInUse = (docId: string) =>
+    state.tasks.some(t => (t.supportingDocs ?? []).includes(docId))
 
   // Documents visible to this role only
   const roleDocs = state.documents.filter(d => isHR ? d.uploadedBy === 'hr' : d.uploadedBy === 'admin')
@@ -309,7 +314,15 @@ export default function AdminPanel({ activeSection = 'overview', isHR = false }:
                           <Eye size={12} />View
                         </button>
                         <button
-                          onClick={() => setConfirmDeleteDoc(confirmDeleteDoc === doc.id ? null : doc.id)}
+                          onClick={() => {
+                            setDocInUseError(null)
+                            if (isDocInUse(doc.id)) {
+                              setDocInUseError(doc.id)
+                              setConfirmDeleteDoc(null)
+                            } else {
+                              setConfirmDeleteDoc(confirmDeleteDoc === doc.id ? null : doc.id)
+                            }
+                          }}
                           title="Delete document"
                           className={`p-1.5 rounded-lg transition-colors ${confirmDeleteDoc === doc.id ? 'text-red-600 bg-red-100' : 'text-red-300 hover:text-red-600 hover:bg-red-50'}`}
                         >
@@ -317,6 +330,16 @@ export default function AdminPanel({ activeSection = 'overview', isHR = false }:
                         </button>
                       </div>
                     </div>
+                    {/* Document in-use error */}
+                    {docInUseError === doc.id && (
+                      <div className="flex items-center justify-between gap-3 px-6 py-3 bg-amber-50 border-t border-amber-200">
+                        <p className="text-xs text-amber-800 font-medium flex items-center gap-2">
+                          <AlertTriangle size={13} className="text-amber-600 flex-shrink-0" />
+                          This document is currently attached to one or more tasks and cannot be deleted.
+                        </p>
+                        <button onClick={() => setDocInUseError(null)} className="text-xs px-3 py-1.5 rounded-lg border border-amber-300 bg-white text-amber-700 hover:bg-amber-50 transition-colors flex-shrink-0">Dismiss</button>
+                      </div>
+                    )}
                     {/* Inline delete confirmation */}
                     {confirmDeleteDoc === doc.id && (
                       <div className="flex items-center justify-between gap-3 px-6 py-3 bg-red-50 border-t border-red-100">
