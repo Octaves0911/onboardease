@@ -3,11 +3,12 @@ import { useState as useLocalState } from 'react'
 import {
   X, Mail, Users, Calendar, TrendingUp, CheckCircle, Clock,
   AlertCircle, FileText, Trash2, Plus, ChevronDown, ChevronUp,
-  Link2, ArrowUp, ArrowDown, GripVertical, MessageSquare, Eye, Send
+  Link2, ArrowUp, ArrowDown, GripVertical, MessageSquare, Eye, Send, Edit3
 } from 'lucide-react'
 import { useApp, initialMentors } from '../../context/AppContext'
 import type { Employee, Task, TaskFeedback, FeedbackVisibility } from '../../context/AppContext'
 import CreateTaskModal from './CreateTaskModal'
+import EditTaskModal from './EditTaskModal'
 
 interface Props {
   employee: Employee
@@ -38,6 +39,7 @@ export default function EmployeeDetailModal({ employee, onClose }: Props) {
   const { state, dispatch } = useApp()
   const [showConfirm,       setShowConfirm]       = useState(false)
   const [showCreateTask,    setShowCreateTask]    = useState(false)
+  const [editingTask,       setEditingTask]       = useState<Task | null>(null)
   const [expandedTask,      setExpandedTask]      = useState<Record<string, boolean>>({})
   const [confirmRemoveTask, setConfirmRemoveTask] = useState<string | null>(null)
   // Feedback state per task
@@ -49,6 +51,14 @@ export default function EmployeeDetailModal({ employee, onClose }: Props) {
   const currentName = currentRole === 'admin' ? 'Admin'
     : currentRole === 'hr' ? 'HR Manager'
     : initialMentors.find(m => m.id === state.currentUserId)?.name ?? 'Mentor'
+
+  // uploaderId for scoping documents when editing a task (mirrors CreateTaskModal logic)
+  const uploaderId = currentRole === 'mentor' ? (state.currentUserId ?? 'mentor') : currentRole
+
+  // Helper: can the current user edit this task?
+  const canEditTask = (task: Task) =>
+    currentRole === task.assignedBy &&
+    (currentRole !== 'mentor' || task.assignedByName === currentName)
 
   const toggleVisibility = (taskId: string, role: FeedbackVisibility) => {
     setFeedbackVis(prev => {
@@ -316,6 +326,17 @@ export default function EmployeeDetailModal({ employee, onClose }: Props) {
                           </button>
                         )}
 
+                        {/* Edit button — only visible to task creator */}
+                        {canEditTask(task) && (
+                          <button
+                            onClick={() => setEditingTask(task)}
+                            title="Edit task"
+                            className="p-1 rounded flex-shrink-0 text-brown-400 hover:text-brown-700 hover:bg-brown-100 transition-colors"
+                          >
+                            <Edit3 size={13} />
+                          </button>
+                        )}
+
                         {/* Delete button */}
                         <button
                           onClick={() => setConfirmRemoveTask(isPendingRemove ? null : task.id)}
@@ -514,6 +535,10 @@ export default function EmployeeDetailModal({ employee, onClose }: Props) {
 
     {showCreateTask && (
       <CreateTaskModal employee={employee} assignedBy={currentRole as 'admin' | 'hr' | 'mentor'} assignedByName={currentName} onClose={() => setShowCreateTask(false)} />
+    )}
+
+    {editingTask && (
+      <EditTaskModal task={editingTask} uploaderId={uploaderId} onClose={() => setEditingTask(null)} />
     )}
     </>
   )

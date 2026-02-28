@@ -292,8 +292,16 @@ function MenteeCard({
   onScheduleClick: () => void
   onCreateTaskClick: () => void
 }) {
+  const { state } = useApp()
   const done   = myTasks.filter(t => t.status === 'done').length
-  const status = mentee.risk === 'high' ? 'at-risk' : mentee.progress > 70 ? 'ahead' : 'on-track'
+
+  // Compute overall progress from ALL tasks assigned to this mentee (not static value)
+  const allTasks = state.tasks.filter(t => t.assignedTo === mentee.id)
+  const computedProgress = allTasks.length > 0
+    ? Math.round((allTasks.filter(t => t.status === 'done').length / allTasks.length) * 100)
+    : mentee.progress
+
+  const status = mentee.risk === 'high' ? 'at-risk' : computedProgress > 70 ? 'ahead' : 'on-track'
   const badgeCls =
     status === 'at-risk' ? 'bg-red-100 text-red-700 border border-red-200'
     : status === 'ahead' ? 'bg-blue-100 text-blue-700 border border-blue-200'
@@ -325,9 +333,9 @@ function MenteeCard({
 
       <div className="mt-4 grid grid-cols-2 gap-4">
         <div>
-          <div className="flex justify-between text-xs text-brown-500 mb-1 font-medium"><span>Progress</span><span>{mentee.progress}%</span></div>
+          <div className="flex justify-between text-xs text-brown-500 mb-1 font-medium"><span>Progress</span><span>{computedProgress}%</span></div>
           <div className="w-full h-2 bg-brown-100 rounded-full overflow-hidden">
-            <div className={`h-full rounded-full ${mentee.risk === 'high' ? 'bg-red-400' : 'bg-teal-500'}`} style={{ width: `${mentee.progress}%` }} />
+            <div className={`h-full rounded-full ${mentee.risk === 'high' ? 'bg-red-400' : 'bg-teal-500'}`} style={{ width: `${computedProgress}%` }} />
           </div>
         </div>
         <div>
@@ -393,8 +401,16 @@ function OverviewSection({
   const { state, dispatch } = useApp()
   const docInputRef = useRef<HTMLInputElement>(null)
 
+  // Compute progress from actual task completion (falls back to static if no tasks)
+  const getComputedProgress = (emp: Employee) => {
+    const tasks = state.tasks.filter(t => t.assignedTo === emp.id)
+    return tasks.length > 0
+      ? Math.round((tasks.filter(t => t.status === 'done').length / tasks.length) * 100)
+      : emp.progress
+  }
+
   const avgProgress = myMentees.length > 0
-    ? Math.round(myMentees.reduce((s, e) => s + e.progress, 0) / myMentees.length)
+    ? Math.round(myMentees.reduce((s, e) => s + getComputedProgress(e), 0) / myMentees.length)
     : 0
 
   const handleDocUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -685,10 +701,15 @@ function MenteesSection({ myMentees }: { myMentees: Employee[] }) {
 
 function DocumentsSection({ currentMentorId }: { currentMentorId: string }) {
   const { state, dispatch } = useApp()
-  const [search,     setSearch]     = useState('')
-  const [viewingDoc, setViewingDoc] = useState<Document | null>(null)
-  const [confirmDel, setConfirmDel] = useState<string | null>(null)
+  const [search,       setSearch]       = useState('')
+  const [viewingDoc,   setViewingDoc]   = useState<Document | null>(null)
+  const [confirmDel,   setConfirmDel]   = useState<string | null>(null)
+  const [docInUseError, setDocInUseError] = useState<string | null>(null)
   const docInputRef = useRef<HTMLInputElement>(null)
+
+  // Check if a document is referenced by any task's supportingDocs
+  const isDocInUse = (docId: string) =>
+    state.tasks.some(t => (t.supportingDocs ?? []).includes(docId))
 
   // Only show documents uploaded by this specific mentor
   const myDocs = state.documents.filter(d => d.uploadedBy === currentMentorId)
@@ -777,12 +798,30 @@ function DocumentsSection({ currentMentorId }: { currentMentorId: string }) {
                       className="text-xs font-semibold text-brown-600 border border-brown-200 bg-white px-2.5 py-1.5 rounded-lg hover:bg-brown-50 transition-colors flex items-center gap-1">
                       <Eye size={12} /> View
                     </button>
-                    <button onClick={() => setConfirmDel(confirmDel === doc.id ? null : doc.id)}
+                    <button onClick={() => {
+                        setDocInUseError(null)
+                        if (isDocInUse(doc.id)) {
+                          setDocInUseError(doc.id)
+                          setConfirmDel(null)
+                        } else {
+                          setConfirmDel(confirmDel === doc.id ? null : doc.id)
+                        }
+                      }}
                       className={`p-1.5 rounded-lg transition-colors ${confirmDel === doc.id ? 'text-red-600 bg-red-100' : 'text-red-300 hover:text-red-600 hover:bg-red-50'}`}>
                       <Trash2 size={15} />
                     </button>
                   </div>
                 </div>
+                {/* Document in-use error */}
+                {docInUseError === doc.id && (
+                  <div className="flex items-center justify-between gap-3 px-6 py-3 bg-amber-50 border-t border-amber-200">
+                    <p className="text-xs text-amber-800 font-medium flex items-center gap-2">
+                      <AlertTriangle size={13} className="text-amber-600 flex-shrink-0" />
+                      This document is currently attached to one or more tasks and cannot be deleted.
+                    </p>
+                    <button onClick={() => setDocInUseError(null)} className="text-xs px-3 py-1.5 rounded-lg border border-amber-300 bg-white text-amber-700 hover:bg-amber-50 transition-colors flex-shrink-0">Dismiss</button>
+                  </div>
+                )}
                 {confirmDel === doc.id && (
                   <div className="flex items-center justify-between gap-3 px-6 py-3 bg-red-50 border-t border-red-100">
                     <p className="text-xs text-red-700 font-medium">Delete <strong>{doc.name}</strong>? This cannot be undone.</p>
