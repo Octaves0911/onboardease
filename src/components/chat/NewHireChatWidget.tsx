@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Bot, Send, Loader2, User, Sparkles, X } from 'lucide-react'
-import { generalChat } from '../../services/aiService'
+import { useApp } from '../../context/AppContext'
+import { buildOnboardBotContext, sendOnboardBotMessage, type OnboardBotMessage } from '../../services/aiService'
 
 interface Message {
   id: string
@@ -19,10 +20,10 @@ interface Props {
 }
 
 const QUICK_PROMPTS = [
+  'What are my pending tasks?',
+  'Who is my mentor and how do I reach them?',
+  'How am I doing so far?',
   'What should I prioritize this week?',
-  'How do I make a good first impression?',
-  'Tips for asking for help without seeming lost?',
-  'How do I build relationships with my team quickly?',
 ]
 
 function timestamp() {
@@ -30,18 +31,20 @@ function timestamp() {
 }
 
 export default function NewHireChatWidget({ employeeName, tasksDone, tasksTotal, mentorName, role, day }: Props) {
+  const { state } = useApp()
   const [messages, setMessages] = useState<Message[]>([])
   const [input,    setInput]    = useState('')
   const [loading,  setLoading]  = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef  = useRef<HTMLInputElement>(null)
+  // Persistent chat session ref for OnboardBot
+  const chatIdRef  = useRef<string | null>(null)
+  // History mirror for context continuity
+  const botHistory = useRef<OnboardBotMessage[]>([])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading])
-
-  const buildContext = () =>
-    `You are a helpful onboarding assistant for ${employeeName}, a new ${role} on Day ${day} of onboarding. They've completed ${tasksDone} of ${tasksTotal} tasks. Their mentor is ${mentorName}. Be encouraging, concise, and practical. Max 120 words per response.`
 
   const send = async (text?: string) => {
     const msg = (text ?? input).trim()
@@ -50,10 +53,14 @@ export default function NewHireChatWidget({ employeeName, tasksDone, tasksTotal,
 
     const userMsg: Message = { id: `u-${Date.now()}`, role: 'user', content: msg, ts: timestamp() }
     setMessages(prev => [...prev, userMsg])
+    botHistory.current = [...botHistory.current, { role: 'user', content: msg }]
     setLoading(true)
 
     try {
-      const reply = await generalChat(msg, buildContext())
+      const userId = state.currentUserId ?? 'emp-1'
+      const context = buildOnboardBotContext(state, userId, 'employee')
+      const reply = await sendOnboardBotMessage(msg, context, botHistory.current, chatIdRef)
+      botHistory.current = [...botHistory.current, { role: 'bot', content: reply }]
       setMessages(prev => [...prev, { id: `a-${Date.now()}`, role: 'ai', content: reply, ts: timestamp() }])
     } catch {
       setMessages(prev => [...prev, { id: `e-${Date.now()}`, role: 'ai', content: 'Sorry, something went wrong. Please try again.', ts: timestamp() }])
