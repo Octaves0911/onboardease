@@ -75,6 +75,14 @@ export interface MentorUser {
   color: string
 }
 
+export interface Notification {
+  id: string
+  type: 'task_assigned' | 'employee_added' | 'employee_removed'
+  message: string
+  createdAt: string
+  read: boolean
+}
+
 interface AppState {
   currentRole: 'admin' | 'hr' | 'mentor' | 'employee' | null
   currentUserId: string | null
@@ -82,6 +90,7 @@ interface AppState {
   tasks: Task[]
   documents: Document[]
   mentors: MentorUser[]
+  notifications: Notification[]
 }
 
 type Action =
@@ -102,6 +111,7 @@ type Action =
   | { type: 'ADD_MENTOR';    payload: MentorUser }
   | { type: 'REMOVE_MENTOR'; payload: { id: string } }
   | { type: 'REMOVE_DOCUMENT'; payload: { id: string } }
+  | { type: 'MARK_NOTIFICATIONS_READ' }
 
 // ─── Initial Data ─────────────────────────────────────────────────────────────
 
@@ -154,6 +164,7 @@ function saveState(state: AppState) {
       employees: state.employees,
       tasks: state.tasks,
       mentors:  state.mentors,
+      notifications: state.notifications,
       // Strip fileData (binary) before persisting to avoid bloating localStorage
       documents: state.documents.map(({ fileData: _fd, ...d }) => d),
     }))
@@ -168,12 +179,41 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, currentRole: action.payload.role, currentUserId: action.payload.userId || null }
     case 'LOGOUT':
       return { ...state, currentRole: null, currentUserId: null }
-    case 'ADD_EMPLOYEE':
-      return { ...state, employees: [...state.employees, action.payload] }
-    case 'ADD_TASK':
-      return { ...state, tasks: [...state.tasks, action.payload] }
-    case 'ADD_TASKS':
-      return { ...state, tasks: [...state.tasks, ...action.payload] }
+    case 'ADD_EMPLOYEE': {
+      const notif: Notification = {
+        id: `notif-${Date.now()}`,
+        type: 'employee_added',
+        message: `New employee ${action.payload.name} (${action.payload.role}) added to onboarding`,
+        createdAt: new Date().toISOString(),
+        read: false,
+      }
+      return { ...state, employees: [...state.employees, action.payload], notifications: [...state.notifications, notif] }
+    }
+    case 'ADD_TASK': {
+      const newNotifs = action.payload.assignedBy === 'admin'
+        ? [...state.notifications, {
+            id: `notif-${Date.now()}`,
+            type: 'task_assigned' as const,
+            message: `Admin assigned "${action.payload.title}"`,
+            createdAt: new Date().toISOString(),
+            read: false,
+          }]
+        : state.notifications
+      return { ...state, tasks: [...state.tasks, action.payload], notifications: newNotifs }
+    }
+    case 'ADD_TASKS': {
+      const adminTasks = action.payload.filter(t => t.assignedBy === 'admin')
+      const newNotifs = adminTasks.length > 0
+        ? [...state.notifications, {
+            id: `notif-${Date.now()}`,
+            type: 'task_assigned' as const,
+            message: `Admin assigned ${adminTasks.length} new task${adminTasks.length > 1 ? 's' : ''}`,
+            createdAt: new Date().toISOString(),
+            read: false,
+          }]
+        : state.notifications
+      return { ...state, tasks: [...state.tasks, ...action.payload], notifications: newNotifs }
+    }
     case 'UPDATE_TASK_STATUS':
       return {
         ...state,
@@ -225,12 +265,22 @@ function reducer(state: AppState, action: Action): AppState {
         }),
       }
     }
-    case 'REMOVE_EMPLOYEE':
+    case 'REMOVE_EMPLOYEE': {
+      const removedEmp = state.employees.find(e => e.id === action.payload.id)
+      const removeNotif: Notification = {
+        id: `notif-${Date.now()}`,
+        type: 'employee_removed',
+        message: removedEmp ? `${removedEmp.name} was removed from onboarding` : 'An employee was removed',
+        createdAt: new Date().toISOString(),
+        read: false,
+      }
       return {
         ...state,
         employees: state.employees.filter(e => e.id !== action.payload.id),
         tasks:     state.tasks.filter(t => t.assignedTo !== action.payload.id),
+        notifications: [...state.notifications, removeNotif],
       }
+    }
     case 'ADD_MENTOR':
       return { ...state, mentors: [...state.mentors, action.payload] }
     case 'REMOVE_MENTOR':
@@ -246,6 +296,8 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, documents: [action.payload, ...state.documents] }
     case 'REMOVE_DOCUMENT':
       return { ...state, documents: state.documents.filter(d => d.id !== action.payload.id) }
+    case 'MARK_NOTIFICATIONS_READ':
+      return { ...state, notifications: state.notifications.map(n => ({ ...n, read: true })) }
     case 'UPDATE_EMPLOYEE_RESUME':
       return {
         ...state,
@@ -276,6 +328,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     employees: persisted.employees ?? initialEmployees,
     tasks: persisted.tasks ?? initialTasks,
     documents: persisted.documents ?? initialDocuments,
+    notifications: (persisted as any).notifications ?? [],
   }
   const [state, dispatch] = useReducer(reducer, initialState)
 

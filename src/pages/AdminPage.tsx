@@ -9,13 +9,12 @@ import ProfileModal from '../components/modals/ProfileModal'
 import Logo from '../components/common/Logo'
 
 const navItems = [
-  { icon: <LayoutDashboard size={20} />, label: 'Overview',     id: 'overview'      },
-  { icon: <Users size={20} />,           label: 'Employees',    id: 'employees'     },
-  { icon: <FileText size={20} />,        label: 'Documents',    id: 'docs'          },
-  { icon: <GraduationCap size={20} />,   label: 'Mentors',      id: 'mentors'       },
-  { icon: <BarChart3 size={20} />,       label: 'Analytics',    id: 'analytics'     },
-  { icon: <Plug size={20} />,            label: 'Integrations', id: 'integrations'  },
-  { icon: <Settings size={20} />,        label: 'Settings',     id: 'settings'      },
+  { icon: <LayoutDashboard size={20} />, label: 'Overview',  id: 'overview'   },
+  { icon: <Users size={20} />,           label: 'Employees', id: 'employees'  },
+  { icon: <FileText size={20} />,        label: 'Documents', id: 'docs'       },
+  { icon: <GraduationCap size={20} />,   label: 'Mentors',   id: 'mentors'    },
+  { icon: <BarChart3 size={20} />,       label: 'Analytics', id: 'analytics'  },
+  { icon: <Settings size={20} />,        label: 'Settings',  id: 'settings'   },
 ]
 
 export default function AdminPage() {

@@ -15,9 +15,9 @@ import AdminChatWidget from '../chat/AdminChatWidget'
 import BulkTaskGenerationModal from '../modals/BulkTaskGenerationModal'
 import type { Employee, Document, MentorUser } from '../../context/AppContext'
 
-interface Props { activeSection?: string }
+interface Props { activeSection?: string; isHR?: boolean }
 
-export default function AdminPanel({ activeSection = 'overview' }: Props) {
+export default function AdminPanel({ activeSection = 'overview', isHR = false }: Props) {
   const { state, dispatch } = useApp()
   const [search,           setSearch]           = useState('')
   const [showAddEmployee,  setShowAddEmployee]  = useState(false)
@@ -32,6 +32,9 @@ export default function AdminPanel({ activeSection = 'overview' }: Props) {
   const [showBulkGenerate,    setShowBulkGenerate]    = useState(false)
   const docUploadRef = useRef<HTMLInputElement>(null)
 
+  // Documents visible to this role only
+  const roleDocs = state.documents.filter(d => isHR ? d.uploadedBy === 'hr' : d.uploadedBy === 'admin')
+
   const handleDirectUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -43,7 +46,7 @@ export default function AdminPanel({ activeSection = 'overview' }: Props) {
         type: file.name.split('.').pop()?.toUpperCase() ?? 'PDF',
         size: `${(file.size / 1024 / 1024).toFixed(1)} MB`,
         status: 'processed',
-        uploadedBy: 'admin',
+        uploadedBy: isHR ? 'hr' : 'admin',
         date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
         content: `Document: ${file.name}. This document contains important company information, policies, procedures, and guidelines for new employees.`,
         fileData: reader.result as string,
@@ -116,7 +119,7 @@ export default function AdminPanel({ activeSection = 'overview' }: Props) {
                   <h3 className="font-bold text-brown-900 flex items-center gap-2"><BarChart3 size={18} />Employee Progress</h3>
                   <div className="flex items-center gap-2">
                     <button onClick={() => setShowBulkGenerate(true)} className="btn-secondary text-sm py-2 px-3 flex items-center gap-1.5"><Sparkles size={14} />AI Generate Tasks</button>
-                    <button onClick={() => setShowAddEmployee(true)} className="btn-primary text-sm py-2 px-4 flex items-center gap-2"><Plus size={14} />Add Employee</button>
+                    {!isHR && <button onClick={() => setShowAddEmployee(true)} className="btn-primary text-sm py-2 px-4 flex items-center gap-2"><Plus size={14} />Add Employee</button>}
                   </div>
                 </div>
                 <div className="space-y-4">
@@ -141,20 +144,22 @@ export default function AdminPanel({ activeSection = 'overview' }: Props) {
                           <p className="text-xs text-brown-400 mt-0.5">Mentor: {getMentor(emp.mentorId)}</p>
                         </div>
                         {emp.risk === 'high' && <AlertTriangle size={16} className="text-red-500 flex-shrink-0" />}
-                        <button
-                          onClick={e => { e.stopPropagation(); setConfirmRemove(emp) }}
-                          className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors flex-shrink-0"
-                          title="Remove employee"
-                        >
-                          <Trash2 size={14} />
-                        </button>
+                        {!isHR && (
+                          <button
+                            onClick={e => { e.stopPropagation(); setConfirmRemove(emp) }}
+                            className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors flex-shrink-0"
+                            title="Remove employee"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
                       </button>
                     )
                   })}
                   {state.employees.filter(e => e.status === 'onboarding').length === 0 && (
                     <div className="text-center py-8 text-brown-400">
                       <Users size={32} className="mx-auto mb-2 opacity-50" />
-                      <p className="text-sm">No active onboarding. <button onClick={() => setShowAddEmployee(true)} className="text-brown-600 underline">Add employee</button></p>
+                      <p className="text-sm">No active onboarding.{!isHR && <> <button onClick={() => setShowAddEmployee(true)} className="text-brown-600 underline">Add employee</button></>}</p>
                     </div>
                   )}
                 </div>
@@ -179,9 +184,11 @@ export default function AdminPanel({ activeSection = 'overview' }: Props) {
               <div className="card">
                 <h3 className="font-bold text-brown-900 mb-4">Quick Actions</h3>
                 <div className="space-y-2">
-                  <button onClick={() => setShowAddEmployee(true)} className="w-full flex items-center gap-3 p-3 rounded-xl bg-brown-50 hover:bg-brown-100 border border-brown-200 transition-colors text-left">
-                    <Plus size={16} className="text-brown-600 flex-shrink-0" /><span className="text-sm font-semibold text-brown-800">Add New Employee</span>
-                  </button>
+                  {!isHR && (
+                    <button onClick={() => setShowAddEmployee(true)} className="w-full flex items-center gap-3 p-3 rounded-xl bg-brown-50 hover:bg-brown-100 border border-brown-200 transition-colors text-left">
+                      <Plus size={16} className="text-brown-600 flex-shrink-0" /><span className="text-sm font-semibold text-brown-800">Add New Employee</span>
+                    </button>
+                  )}
                   <button onClick={() => docUploadRef.current?.click()} className="w-full flex items-center gap-3 p-3 rounded-xl bg-brown-50 hover:bg-brown-100 border border-brown-200 transition-colors text-left">
                     <Upload size={16} className="text-brown-600 flex-shrink-0" /><span className="text-sm font-semibold text-brown-800">Upload Documents</span>
                   </button>
@@ -201,7 +208,7 @@ export default function AdminPanel({ activeSection = 'overview' }: Props) {
               </div>
               <div className="flex items-center gap-2">
                 <button onClick={() => setShowBulkGenerate(true)} className="btn-secondary inline-flex items-center gap-2 py-2.5 px-4 text-sm"><Sparkles size={15} />AI Generate Tasks</button>
-                <button onClick={() => setShowAddEmployee(true)} className="btn-primary inline-flex items-center gap-2 py-2.5 px-5 text-sm"><Plus size={16} />Add New Employee</button>
+                {!isHR && <button onClick={() => setShowAddEmployee(true)} className="btn-primary inline-flex items-center gap-2 py-2.5 px-5 text-sm"><Plus size={16} />Add New Employee</button>}
               </div>
             </div>
             <div className="card overflow-hidden p-0">
@@ -231,15 +238,17 @@ export default function AdminPanel({ activeSection = 'overview' }: Props) {
                           <td className="px-4 py-4">{emp.status === 'completed' ? <span className="badge-green">Completed</span> : <span className="badge-orange">Onboarding</span>}</td>
                           <td className="px-4 py-4">{emp.resumeFileName ? <span className="badge-green flex items-center gap-1 w-fit"><CheckCircle size={11} />{emp.resumeFileName.slice(0, 12)}…</span> : <span className="text-xs text-brown-400">—</span>}</td>
                           <td className="px-4 py-4 text-xs text-brown-400 underline">View →</td>
-                          <td className="px-4 py-4">
-                            <button
-                              onClick={e => { e.stopPropagation(); setConfirmRemove(emp) }}
-                              className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors"
-                              title="Remove employee"
-                            >
-                              <Trash2 size={15} />
-                            </button>
-                          </td>
+                          {!isHR && (
+                            <td className="px-4 py-4">
+                              <button
+                                onClick={e => { e.stopPropagation(); setConfirmRemove(emp) }}
+                                className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+                                title="Remove employee"
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            </td>
+                          )}
                         </tr>
                       )
                     })}
@@ -268,16 +277,16 @@ export default function AdminPanel({ activeSection = 'overview' }: Props) {
             <div className="card p-0 overflow-hidden">
               <div className="px-6 py-4 border-b border-brown-100 flex justify-between items-center">
                 <h3 className="font-bold text-brown-900">Uploaded Documents</h3>
-                <span className="badge-brown">{state.documents.length} files</span>
+                <span className="badge-brown">{roleDocs.length} files</span>
               </div>
               <div className="divide-y divide-brown-100">
-                {state.documents.length === 0 && (
+                {roleDocs.length === 0 && (
                   <div className="text-center py-10 text-brown-400">
                     <BookOpen size={28} className="mx-auto mb-2 opacity-40" />
                     <p className="text-sm">No documents uploaded yet.</p>
                   </div>
                 )}
-                {state.documents.map(doc => (
+                {roleDocs.map(doc => (
                   <div key={doc.id} className={`transition-colors ${confirmDeleteDoc === doc.id ? 'bg-red-50' : 'hover:bg-brown-50/50'}`}>
                     {/* Main row */}
                     <div className="flex items-center gap-4 px-6 py-4">
@@ -472,7 +481,7 @@ export default function AdminPanel({ activeSection = 'overview' }: Props) {
               {/* Header + Add button */}
               <div className="flex items-center justify-between">
                 <h3 className="font-bold text-brown-900 flex items-center gap-2"><Users size={18} />All Mentors <span className="text-xs font-medium bg-brown-100 text-brown-600 px-2 py-0.5 rounded-full">{mentors.length}</span></h3>
-                <button onClick={() => setShowAddMentor(true)} className="btn-primary text-sm py-2 px-4 flex items-center gap-2"><Plus size={14} />Add Mentor</button>
+                {!isHR && <button onClick={() => setShowAddMentor(true)} className="btn-primary text-sm py-2 px-4 flex items-center gap-2"><Plus size={14} />Add Mentor</button>}
               </div>
 
               {/* Mentor cards */}
@@ -500,13 +509,15 @@ export default function AdminPanel({ activeSection = 'overview' }: Props) {
                             <p className="text-xs text-brown-500 truncate">{mentor.specialty}</p>
                             <span className="inline-block mt-1 text-xs font-semibold bg-brown-100 text-brown-600 px-2 py-0.5 rounded-full">{mentor.department}</span>
                           </div>
-                          <button
-                            onClick={() => setConfirmRemoveMentor(mentor)}
-                            className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors flex-shrink-0"
-                            title="Remove mentor"
-                          >
-                            <Trash2 size={14} />
-                          </button>
+                          {!isHR && (
+                            <button
+                              onClick={() => setConfirmRemoveMentor(mentor)}
+                              className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors flex-shrink-0"
+                              title="Remove mentor"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
                         </div>
 
                         {/* Mentees stats */}

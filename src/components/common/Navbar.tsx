@@ -17,7 +17,7 @@ export default function Navbar({ variant = 'landing', title, onProfileClick }: N
   const notifRef   = useRef<HTMLDivElement>(null)
   const profileRef = useRef<HTMLDivElement>(null)
   const location   = useLocation()
-  const { state }  = useApp()
+  const { state, dispatch }  = useApp()
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -63,29 +63,64 @@ export default function Navbar({ variant = 'landing', title, onProfileClick }: N
 
           <div className="flex items-center gap-2">
 
-            {/* Notifications */}
-            <div className="relative" ref={notifRef}>
-              <button
-                onClick={() => { setNotifOpen(!notifOpen); setProfileOpen(false) }}
-                className="relative p-2 rounded-lg hover:bg-brown-100 transition-colors text-brown-600"
-              >
-                <Bell size={20} />
-                {/* dot hidden since no notifications */}
-              </button>
-              {notifOpen && (
-                <div className="absolute right-0 mt-2 w-72 bg-white border border-brown-200 rounded-2xl shadow-xl py-1 z-50 animate-fade-in">
-                  <div className="px-4 py-3 border-b border-brown-100 flex items-center justify-between">
-                    <p className="font-bold text-brown-900 text-sm">Notifications</p>
-                    <span className="text-xs text-brown-400">0 new</span>
-                  </div>
-                  <div className="flex flex-col items-center justify-center py-10 text-brown-400">
-                    <Bell size={28} className="mb-2 opacity-30" />
-                    <p className="text-sm font-medium">No notifications yet</p>
-                    <p className="text-xs mt-1 opacity-70">You're all caught up!</p>
-                  </div>
+            {/* Notifications — HR sees admin-sourced events */}
+            {(() => {
+              const isHR = state.currentRole === 'hr'
+              const hrNotifs = isHR ? state.notifications : []
+              const unread = hrNotifs.filter(n => !n.read).length
+              return (
+                <div className="relative" ref={notifRef}>
+                  <button
+                    onClick={() => {
+                      setNotifOpen(!notifOpen)
+                      setProfileOpen(false)
+                      if (!notifOpen && isHR && unread > 0) dispatch({ type: 'MARK_NOTIFICATIONS_READ' })
+                    }}
+                    className="relative p-2 rounded-lg hover:bg-brown-100 transition-colors text-brown-600"
+                  >
+                    <Bell size={20} />
+                    {unread > 0 && (
+                      <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                        {unread > 9 ? '9+' : unread}
+                      </span>
+                    )}
+                  </button>
+                  {notifOpen && (
+                    <div className="absolute right-0 mt-2 w-80 bg-white border border-brown-200 rounded-2xl shadow-xl py-1 z-50 animate-fade-in">
+                      <div className="px-4 py-3 border-b border-brown-100 flex items-center justify-between">
+                        <p className="font-bold text-brown-900 text-sm">Notifications</p>
+                        <span className="text-xs text-brown-400">{unread} new</span>
+                      </div>
+                      {hrNotifs.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-10 text-brown-400">
+                          <Bell size={28} className="mb-2 opacity-30" />
+                          <p className="text-sm font-medium">No notifications yet</p>
+                          <p className="text-xs mt-1 opacity-70">You're all caught up!</p>
+                        </div>
+                      ) : (
+                        <div className="max-h-72 overflow-y-auto divide-y divide-brown-50">
+                          {[...hrNotifs].reverse().map(n => (
+                            <div key={n.id} className={`px-4 py-3 flex items-start gap-3 ${n.read ? 'opacity-60' : ''}`}>
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-sm
+                                ${n.type === 'employee_added' ? 'bg-green-100 text-green-700' :
+                                  n.type === 'employee_removed' ? 'bg-red-100 text-red-600' :
+                                  'bg-blue-100 text-blue-700'}`}>
+                                {n.type === 'employee_added' ? '👤' : n.type === 'employee_removed' ? '🗑' : '📋'}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-semibold text-brown-800">{n.message}</p>
+                                <p className="text-xs text-brown-400 mt-0.5">{new Date(n.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                              </div>
+                              {!n.read && <span className="w-2 h-2 bg-red-500 rounded-full flex-shrink-0 mt-1.5" />}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+              )
+            })()}
 
             {/* Profile */}
             <div className="relative" ref={profileRef}>
