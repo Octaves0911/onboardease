@@ -95,6 +95,8 @@ export default function EmployeeDetailModal({ employee, onClose }: Props) {
   }
 
   const cyclePriority = (task: Task) => {
+    // Only the task creator can change priority
+    if (currentRole !== task.assignedBy) return
     const idx  = PRIORITY_CYCLE.indexOf(task.priority)
     const next = PRIORITY_CYCLE[(idx + 1) % PRIORITY_CYCLE.length]
     dispatch({ type: 'UPDATE_TASK', payload: { id: task.id, updates: { priority: next } } })
@@ -283,11 +285,12 @@ export default function EmployeeDetailModal({ employee, onClose }: Props) {
                           </div>
                         </div>
 
-                        {/* Priority badge — click to cycle */}
+                        {/* Priority badge — click to cycle; only task creator */}
                         <button
                           onClick={() => cyclePriority(task)}
-                          title="Click to change priority"
-                          className={`text-xs font-semibold px-2 py-0.5 rounded-full border flex-shrink-0 transition-colors ${priorityStyle(task.priority)}`}
+                          title={currentRole !== task.assignedBy ? `Only ${task.assignedByName} can change priority` : 'Click to change priority'}
+                          disabled={currentRole !== task.assignedBy}
+                          className={`text-xs font-semibold px-2 py-0.5 rounded-full border flex-shrink-0 transition-colors ${priorityStyle(task.priority)} ${currentRole !== task.assignedBy ? 'opacity-50 cursor-not-allowed' : ''}`}
                         >
                           {priorityLabel(task.priority)}
                         </button>
