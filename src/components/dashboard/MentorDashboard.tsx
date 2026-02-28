@@ -406,8 +406,8 @@ function OverviewSection({
     e.target.value = ''
   }
 
-  // All documents visible in the right panel (admin + HR + any mentor)
-  const allDocs = state.documents
+  // Only show documents uploaded by this specific mentor in the overview panel
+  const allDocs = state.documents.filter(d => d.uploadedBy === currentMentor.id)
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
@@ -443,6 +443,15 @@ function OverviewSection({
         ))}
       </div>
 
+      {/* ── AI Insights — full-width central pane ── */}
+      <AdminChatWidget
+        employeeCount={myMentees.length}
+        atRiskCount={myMentees.filter(e => e.risk === 'high').length}
+        avgProgress={avgProgress}
+        docCount={state.documents.length}
+        atRiskNames={myMentees.filter(e => e.risk === 'high').map(e => e.name)}
+      />
+
       <div className="grid lg:grid-cols-3 gap-6">
         {/* ── Mentee cards ── */}
         <div className="lg:col-span-2 space-y-4">
@@ -469,23 +478,12 @@ function OverviewSection({
           )}
         </div>
 
-        {/* ── Right panel: AI Insights + Documents ── */}
+        {/* ── Right panel: My Documents only ── */}
         <div className="space-y-5">
-
-          {/* AI Insights widget */}
-          <AdminChatWidget
-            employeeCount={myMentees.length}
-            atRiskCount={myMentees.filter(e => e.risk === 'high').length}
-            avgProgress={avgProgress}
-            docCount={state.documents.length}
-            atRiskNames={myMentees.filter(e => e.risk === 'high').map(e => e.name)}
-          />
-
-          {/* Documents — all docs visible here (admin + HR + mentors) */}
           <div className="card space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-brown-900 flex items-center gap-2">
-                <FileText size={16} className="text-teal-600" /> Documents
+                <FileText size={16} className="text-teal-600" /> My Documents
               </h3>
               <button
                 onClick={() => docInputRef.current?.click()}
@@ -497,7 +495,7 @@ function OverviewSection({
             </div>
             <div className="space-y-2 max-h-48 overflow-y-auto">
               {allDocs.length === 0 ? (
-                <p className="text-xs text-brown-400 text-center py-4">No documents yet</p>
+                <p className="text-xs text-brown-400 text-center py-4">No documents uploaded yet</p>
               ) : (
                 allDocs.slice(0, 6).map(doc => (
                   <div key={doc.id} className="flex items-center gap-2 p-2 rounded-lg bg-brown-50 border border-brown-100">
@@ -877,15 +875,46 @@ function ScheduleSection({ myMentees, meetings, setMeetings }: {
 
 // ─── SettingsSection ──────────────────────────────────────────────────────────
 
+interface DayAvailability {
+  day: string
+  enabled: boolean
+  start: string
+  end: string
+}
+
+const DEFAULT_AVAILABILITY: DayAvailability[] = [
+  { day: 'Monday',    enabled: true,  start: '10:00', end: '17:00' },
+  { day: 'Tuesday',   enabled: true,  start: '10:00', end: '17:00' },
+  { day: 'Wednesday', enabled: true,  start: '10:00', end: '17:00' },
+  { day: 'Thursday',  enabled: false, start: '09:00', end: '17:00' },
+  { day: 'Friday',    enabled: false, start: '09:00', end: '17:00' },
+]
+
 function SettingsSection({ currentMentor }: { currentMentor: typeof initialMentors[0] }) {
   const [notifNewMentee, setNotifNewMentee] = useState(true)
   const [notifTask,      setNotifTask]      = useState(true)
   const [notifProgress,  setNotifProgress]  = useState(false)
   const [editMode,       setEditMode]       = useState(false)
+  const [editAvail,      setEditAvail]      = useState(false)
   const [displayName,    setDisplayName]    = useState(currentMentor.name)
-  const [saved,          setSaved]          = useState(false)
+  const [availability,   setAvailability]   = useState<DayAvailability[]>(DEFAULT_AVAILABILITY)
+  const [savedProfile,   setSavedProfile]   = useState(false)
+  const [savedAvail,     setSavedAvail]     = useState(false)
 
-  const save = () => { setEditMode(false); setSaved(true); setTimeout(() => setSaved(false), 2500) }
+  const saveProfile = () => { setEditMode(false); setSavedProfile(true); setTimeout(() => setSavedProfile(false), 2500) }
+  const saveAvail   = () => { setEditAvail(false); setSavedAvail(true); setTimeout(() => setSavedAvail(false), 2500) }
+
+  const toggleDay = (i: number) =>
+    setAvailability(prev => prev.map((d, idx) => idx === i ? { ...d, enabled: !d.enabled } : d))
+
+  const updateTime = (i: number, field: 'start' | 'end', val: string) =>
+    setAvailability(prev => prev.map((d, idx) => idx === i ? { ...d, [field]: val } : d))
+
+  const fmt12 = (t: string) => {
+    const [h, m] = t.split(':').map(Number)
+    const ampm = h >= 12 ? 'PM' : 'AM'
+    return `${h % 12 || 12}:${m.toString().padStart(2, '0')} ${ampm}`
+  }
 
   const Toggle = ({ on, setOn }: { on: boolean; setOn: (v: boolean) => void }) => (
     <button onClick={() => setOn(!on)} className={`w-10 h-6 rounded-full transition-colors flex-shrink-0 relative ${on ? 'bg-teal-500' : 'bg-brown-200'}`}>
@@ -896,11 +925,14 @@ function SettingsSection({ currentMentor }: { currentMentor: typeof initialMento
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
       <h2 className="text-xl font-bold text-brown-900 flex items-center gap-2"><Settings size={20} className="text-teal-600" /> Settings</h2>
-      {saved && <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-xl text-green-700 text-sm font-medium"><CheckCircle size={16} /> Changes saved successfully</div>}
+      {savedProfile && <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-xl text-green-700 text-sm font-medium"><CheckCircle size={16} /> Profile saved successfully</div>}
+      {savedAvail   && <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-xl text-green-700 text-sm font-medium"><CheckCircle size={16} /> Availability saved successfully</div>}
+
+      {/* Profile */}
       <div className="card space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="font-bold text-brown-900 flex items-center gap-2"><Star size={16} className="text-teal-500" /> Profile</h3>
-          <button onClick={() => editMode ? save() : setEditMode(true)} className="flex items-center gap-1.5 text-xs font-semibold text-teal-600 hover:text-teal-700 transition-colors">
+          <button onClick={() => editMode ? saveProfile() : setEditMode(true)} className="flex items-center gap-1.5 text-xs font-semibold text-teal-600 hover:text-teal-700 transition-colors">
             {editMode ? <><Save size={13} /> Save</> : <><Edit3 size={13} /> Edit</>}
           </button>
         </div>
@@ -914,6 +946,8 @@ function SettingsSection({ currentMentor }: { currentMentor: typeof initialMento
           </div>
         </div>
       </div>
+
+      {/* Notifications */}
       <div className="card space-y-4">
         <h3 className="font-bold text-brown-900 flex items-center gap-2"><Bell size={16} className="text-teal-500" /> Notifications</h3>
         {[
@@ -927,17 +961,46 @@ function SettingsSection({ currentMentor }: { currentMentor: typeof initialMento
           </div>
         ))}
       </div>
+
+      {/* Availability — editable */}
       <div className="card space-y-4">
-        <h3 className="font-bold text-brown-900 flex items-center gap-2"><Clock size={16} className="text-teal-500" /> Availability</h3>
-        <div className="grid grid-cols-2 gap-3">
-          {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].map((day, i) => (
-            <div key={day} className={`flex items-center gap-2 p-3 rounded-xl border ${i < 3 ? 'bg-teal-50 border-teal-200' : 'bg-brown-50 border-brown-200'}`}>
-              <div className={`w-2 h-2 rounded-full flex-shrink-0 ${i < 3 ? 'bg-teal-500' : 'bg-brown-300'}`} />
-              <div><p className="text-sm font-semibold text-brown-900">{day}</p><p className="text-xs text-brown-500">{i < 3 ? '10:00 AM – 5:00 PM' : 'Not available'}</p></div>
+        <div className="flex items-center justify-between">
+          <h3 className="font-bold text-brown-900 flex items-center gap-2"><Clock size={16} className="text-teal-500" /> Availability</h3>
+          <button onClick={() => editAvail ? saveAvail() : setEditAvail(true)} className="flex items-center gap-1.5 text-xs font-semibold text-teal-600 hover:text-teal-700 transition-colors">
+            {editAvail ? <><Save size={13} /> Save</> : <><Edit3 size={13} /> Edit</>}
+          </button>
+        </div>
+        <div className="space-y-2">
+          {availability.map((d, i) => (
+            <div key={d.day} className={`flex items-center gap-3 p-3 rounded-xl border transition-colors ${d.enabled ? 'bg-teal-50 border-teal-200' : 'bg-brown-50 border-brown-200'}`}>
+              {/* Day toggle (only in edit mode) */}
+              {editAvail ? (
+                <button onClick={() => toggleDay(i)} className={`w-9 h-5 rounded-full relative flex-shrink-0 transition-colors ${d.enabled ? 'bg-teal-500' : 'bg-brown-300'}`}>
+                  <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${d.enabled ? 'left-[calc(100%-1.125rem)]' : 'left-0.5'}`} />
+                </button>
+              ) : (
+                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${d.enabled ? 'bg-teal-500' : 'bg-brown-300'}`} />
+              )}
+              <span className="text-sm font-semibold text-brown-900 w-24 flex-shrink-0">{d.day}</span>
+              {d.enabled ? (
+                editAvail ? (
+                  <div className="flex items-center gap-2 flex-1">
+                    <input type="time" value={d.start} onChange={e => updateTime(i, 'start', e.target.value)}
+                      className="border border-teal-200 rounded-lg px-2 py-1 text-xs text-brown-800 bg-white focus:outline-none focus:ring-2 focus:ring-teal-400 w-28" />
+                    <span className="text-xs text-brown-400">to</span>
+                    <input type="time" value={d.end} onChange={e => updateTime(i, 'end', e.target.value)}
+                      className="border border-teal-200 rounded-lg px-2 py-1 text-xs text-brown-800 bg-white focus:outline-none focus:ring-2 focus:ring-teal-400 w-28" />
+                  </div>
+                ) : (
+                  <span className="text-xs text-teal-700 font-medium">{fmt12(d.start)} – {fmt12(d.end)}</span>
+                )
+              ) : (
+                <span className="text-xs text-brown-400 italic">Not available</span>
+              )}
             </div>
           ))}
         </div>
-        <p className="text-xs text-brown-400">Availability shown to your mentees for scheduling.</p>
+        <p className="text-xs text-brown-400">Availability is shown to your mentees when scheduling meetings.</p>
       </div>
     </div>
   )
