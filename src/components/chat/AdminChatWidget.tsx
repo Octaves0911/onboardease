@@ -18,12 +18,27 @@ interface Props {
   atRiskNames: string[]
 }
 
-const QUICK_PROMPTS = [
-  'Show me employees who are at risk',
-  'Best practices for Day 1 onboarding?',
-  'How to structure a 30-day plan?',
-  'Give me an onboarding progress summary',
-]
+// Role-specific suggestion chips matching the OnboardBot spec
+const ROLE_PROMPTS: Record<string, string[]> = {
+  admin: [
+    'Give me a full onboarding overview',
+    'Any at-risk employees?',
+    'What documents are uploaded?',
+    'Show overall progress metrics',
+  ],
+  hr: [
+    'How many employees are onboarding?',
+    'Which employees are at risk?',
+    'What documents are uploaded?',
+    'Give me an onboarding progress summary',
+  ],
+  mentor: [
+    "Show my mentees' progress",
+    'Who is at risk?',
+    'What tasks are assigned to my mentees?',
+    'How do I schedule a meeting?',
+  ],
+}
 
 function timestamp() {
   return new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
@@ -38,8 +53,22 @@ export default function AdminChatWidget({ employeeCount, atRiskCount, avgProgres
   const inputRef   = useRef<HTMLInputElement>(null)
   // Persistent chat session ref for OnboardBot
   const chatIdRef  = useRef<string | null>(null)
-  // History for OnboardBot (mirrors messages for context continuity)
+  // History for OnboardBot — must NOT include the current user message on the first call
   const botHistory = useRef<OnboardBotMessage[]>([])
+
+  // Resolve current role (admin | hr | mentor)
+  const currentRole = (
+    state.currentRole === 'hr' ? 'hr'
+    : state.currentRole === 'mentor' ? 'mentor'
+    : 'admin'
+  ) as 'admin' | 'hr' | 'mentor'
+
+  const currentUserId = state.currentUserId ?? (currentRole === 'hr' ? 'hr' : 'admin')
+  const quickPrompts  = ROLE_PROMPTS[currentRole] ?? ROLE_PROMPTS.admin
+
+  const roleLabel = currentRole === 'hr' ? 'HR Manager'
+    : currentRole === 'mentor' ? 'Mentor'
+    : 'Admin'
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -52,15 +81,15 @@ export default function AdminChatWidget({ employeeCount, atRiskCount, avgProgres
 
     const userMsg: Message = { id: `u-${Date.now()}`, role: 'user', content: msg, ts: timestamp() }
     setMessages(prev => [...prev, userMsg])
+
+    // Capture history BEFORE adding user message so isFirst check works correctly
+    const prevHistory = [...botHistory.current]
     botHistory.current = [...botHistory.current, { role: 'user', content: msg }]
     setLoading(true)
 
     try {
-      // Determine role: if HR page uses this widget, currentRole is 'hr'; else 'admin'
-      const role = (state.currentRole === 'hr' ? 'hr' : 'admin') as 'admin' | 'hr'
-      const userId = role === 'hr' ? 'hr' : 'admin'
-      const context = buildOnboardBotContext(state, userId, role)
-      const reply = await sendOnboardBotMessage(msg, context, botHistory.current, chatIdRef)
+      const context = buildOnboardBotContext(state, currentUserId, currentRole)
+      const reply = await sendOnboardBotMessage(msg, context, prevHistory, chatIdRef)
       botHistory.current = [...botHistory.current, { role: 'bot', content: reply }]
       setMessages(prev => [...prev, { id: `a-${Date.now()}`, role: 'ai', content: reply, ts: timestamp() }])
     } catch {
@@ -84,8 +113,8 @@ export default function AdminChatWidget({ employeeCount, atRiskCount, avgProgres
             <Bot size={15} className="text-white" />
           </div>
           <div>
-            <p className="text-sm font-bold text-white leading-none">Onboarding Assistant</p>
-            <p className="text-xs text-white/60 mt-0.5">Ask anything about onboarding</p>
+            <p className="text-sm font-bold text-white leading-none">OnboardBot</p>
+            <p className="text-xs text-white/60 mt-0.5">{roleLabel} · AI Onboarding Assistant</p>
           </div>
         </div>
         <div className="flex items-center gap-1">
@@ -109,7 +138,7 @@ export default function AdminChatWidget({ employeeCount, atRiskCount, avgProgres
               </div>
               <div className="bg-brown-50 border border-brown-100 rounded-2xl rounded-tl-sm px-3 py-2.5 max-w-[85%]">
                 <p className="text-xs text-brown-700 leading-relaxed">
-                  Hi! I'm your onboarding assistant. I can help with <strong>best practices</strong>, <strong>employee engagement strategies</strong>, <strong>task planning</strong>, and any other onboarding questions. What do you need help with?
+                  Hi {roleLabel}! 👋 I'm <strong>OnboardBot</strong> — your AI onboarding assistant. I have full context about your {currentRole === 'mentor' ? "assigned mentees' tasks and progress" : 'employees, tasks, documents, and onboarding metrics'}. I can also answer general questions outside of onboarding. What do you need help with?
                 </p>
               </div>
             </div>
@@ -117,10 +146,10 @@ export default function AdminChatWidget({ employeeCount, atRiskCount, avgProgres
             {/* Quick prompts */}
             <div className="space-y-1.5 pb-1">
               <p className="text-xs text-brown-400 font-medium flex items-center gap-1"><Sparkles size={11} />Quick questions</p>
-              {QUICK_PROMPTS.map(p => (
+              {quickPrompts.map(p => (
                 <button
                   key={p}
-                  onClick={() => { setInput(p); inputRef.current?.focus() }}
+                  onClick={() => send(p)}
                   className="w-full text-left text-xs text-brown-600 bg-brown-50 hover:bg-brown-100 border border-brown-100 px-3 py-2 rounded-xl transition-colors leading-relaxed"
                 >
                   {p}
