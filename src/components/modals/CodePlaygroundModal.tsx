@@ -336,12 +336,17 @@ export default function CodePlaygroundModal({ task, onClose, onMarkDone }: Props
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
       if (!isDragging.current) return
-      // Moving left (negative dx) INCREASES panel width since handle is on left edge
-      const dx      = dragStartX.current - e.clientX
-      const newW    = Math.max(240, Math.min(620, dragStartW.current + dx))
+      // Moving left → positive dx → width increases (handle is on left edge)
+      const dx   = dragStartX.current - e.clientX
+      const newW = Math.max(240, Math.min(640, dragStartW.current + dx))
       setAiPanelWidth(newW)
     }
-    const onUp = () => { isDragging.current = false }
+    const onUp = () => {
+      if (!isDragging.current) return
+      isDragging.current           = false
+      document.body.style.cursor      = ''
+      document.body.style.userSelect  = ''
+    }
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup',   onUp)
     return () => {
@@ -351,9 +356,12 @@ export default function CodePlaygroundModal({ task, onClose, onMarkDone }: Props
   }, [])
 
   const startDrag = (e: React.MouseEvent) => {
-    isDragging.current   = true
-    dragStartX.current   = e.clientX
-    dragStartW.current   = aiPanelWidth
+    isDragging.current          = true
+    dragStartX.current          = e.clientX
+    dragStartW.current          = aiPanelWidth
+    // Lock cursor + block text selection for the entire document while dragging
+    document.body.style.cursor     = 'col-resize'
+    document.body.style.userSelect = 'none'
     e.preventDefault()
   }
 
@@ -726,14 +734,21 @@ export default function CodePlaygroundModal({ task, onClose, onMarkDone }: Props
             className="bg-[#13132a] border-l border-white/10 flex flex-col flex-shrink-0 relative"
             style={{ width: aiPanelWidth }}
           >
-            {/* Drag handle — left edge */}
+            {/* Drag handle — left edge (12 px hit area, 2 px visible bar) */}
             <div
               onMouseDown={startDrag}
-              className="absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize z-10 group"
-              title="Drag to resize"
+              style={{ cursor: 'col-resize' }}
+              className="absolute left-0 top-0 bottom-0 w-3 z-20 group flex items-center justify-center"
+              title="Drag to resize panel"
             >
-              <div className="absolute inset-y-0 left-0 w-0.5 bg-transparent group-hover:bg-purple-500/50 transition-colors" />
-
+              {/* Visual bar */}
+              <div className="w-0.5 h-full bg-white/8 group-hover:bg-purple-400/70 transition-colors duration-150" />
+              {/* Grip dots centred in the bar */}
+              <div className="absolute flex flex-col gap-1 pointer-events-none top-1/2 -translate-y-1/2">
+                {[0,1,2,3,4].map(i => (
+                  <span key={i} className="w-0.5 h-0.5 rounded-full bg-white/20 group-hover:bg-purple-300/80 transition-colors" />
+                ))}
+              </div>
             </div>
 
             {/* AI pane header */}
