@@ -13,6 +13,7 @@ import CreateTaskModal from '../modals/CreateTaskModal'
 import EmployeeDetailModal from '../modals/EmployeeDetailModal'
 import PDFViewerModal from '../modals/PDFViewerModal'
 import AdminChatWidget from '../chat/AdminChatWidget'
+import PlaygroundActivityModal from '../modals/PlaygroundActivityModal'
 
 // ─── Local types ──────────────────────────────────────────────────────────────
 
@@ -285,12 +286,14 @@ function MenteeCard({
   onDetailClick,
   onScheduleClick,
   onCreateTaskClick,
+  onViewPlayground,
 }: {
   mentee: Employee
   myTasks: Task[]
   onDetailClick: () => void
   onScheduleClick: () => void
   onCreateTaskClick: () => void
+  onViewPlayground: (task: Task) => void
 }) {
   const { state } = useApp()
   const done   = myTasks.filter(t => t.status === 'done').length
@@ -357,13 +360,45 @@ function MenteeCard({
         </div>
       </div>
 
-      {/* Playground badge if any mentor task has it enabled */}
-      {myTasks.some(t => t.playgroundEnabled) && (
-        <div className="mt-3 flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-teal-50 border border-teal-200 w-fit">
-          <FlaskConical size={12} className="text-teal-600" />
-          <span className="text-xs font-semibold text-teal-700">Playground Active</span>
-        </div>
-      )}
+      {/* Playground activity panel — shows each playground task with View button */}
+      {myTasks.some(t => t.playgroundEnabled) && (() => {
+        const pgTasks = myTasks.filter(t => t.playgroundEnabled)
+        return (
+          <div className="mt-3 bg-teal-50 border border-teal-200 rounded-xl overflow-hidden">
+            <div className="flex items-center gap-1.5 px-3 py-2 border-b border-teal-200">
+              <FlaskConical size={12} className="text-teal-600" />
+              <span className="text-xs font-bold text-teal-700">Playground Tasks</span>
+              <span className="ml-auto text-[10px] font-semibold bg-teal-600 text-white px-1.5 py-0.5 rounded-full">{pgTasks.length}</span>
+            </div>
+            {pgTasks.map(t => {
+              const hasActivity = !!t.playgroundState?.lastSaved
+              const typeIcon = t.playgroundType === 'sales' ? '📧' : '💻'
+              const typeLabel = t.playgroundType === 'sales' ? 'Sales Mail' : 'Engineering'
+              return (
+                <div key={t.id} className="flex items-center gap-2 px-3 py-2 border-b border-teal-100 last:border-b-0">
+                  <span className="text-xs">{typeIcon}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-teal-800 truncate">{t.title}</p>
+                    <p className="text-[10px] text-teal-500">{typeLabel} · {hasActivity ? '🟢 Has activity' : '⚪ No activity yet'}</p>
+                  </div>
+                  <button
+                    onClick={e => { e.stopPropagation(); onViewPlayground(t) }}
+                    disabled={!hasActivity}
+                    title={hasActivity ? 'View playground activity' : 'No activity yet'}
+                    className={`flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-lg transition-colors flex-shrink-0 ${
+                      hasActivity
+                        ? 'bg-teal-600 text-white hover:bg-teal-700'
+                        : 'bg-teal-100 text-teal-400 cursor-not-allowed'
+                    }`}
+                  >
+                    <Eye size={10} /> View
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        )
+      })()}
 
       {/* Actions */}
       <div className="flex justify-between items-center mt-4 pt-4 border-t border-brown-100 flex-wrap gap-2">
@@ -402,6 +437,10 @@ function OverviewSection({
 }) {
   const { state, dispatch } = useApp()
   const docInputRef = useRef<HTMLInputElement>(null)
+
+  // Playground activity viewer state
+  const [pgTask,     setPgTask]     = useState<Task | null>(null)
+  const [pgEmployee, setPgEmployee] = useState<Employee | null>(null)
 
   // Compute progress from actual task completion (falls back to static if no tasks)
   const getComputedProgress = (emp: Employee) => {
@@ -494,7 +533,8 @@ function OverviewSection({
                 <MenteeCard key={mentee.id} mentee={mentee} myTasks={myTasks}
                   onDetailClick={() => onDetailClick(mentee)}
                   onScheduleClick={() => onScheduleClick(mentee)}
-                  onCreateTaskClick={() => onCreateTaskClick(mentee)} />
+                  onCreateTaskClick={() => onCreateTaskClick(mentee)}
+                  onViewPlayground={t => { setPgTask(t); setPgEmployee(mentee) }} />
               )
             })
           )}
@@ -574,6 +614,15 @@ function OverviewSection({
           </div>
         </div>
       </div>
+
+      {/* Playground Activity Modal — opens from MenteeCard "View" button */}
+      {pgTask && pgEmployee && (
+        <PlaygroundActivityModal
+          task={pgTask}
+          employeeName={pgEmployee.name}
+          onClose={() => { setPgTask(null); setPgEmployee(null) }}
+        />
+      )}
     </div>
   )
 }
