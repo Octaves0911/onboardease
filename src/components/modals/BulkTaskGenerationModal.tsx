@@ -6,8 +6,24 @@ import {
 } from 'lucide-react'
 import { useApp } from '../../context/AppContext'
 import type { Employee, Task } from '../../context/AppContext'
-import { suggestTasksForEmployee } from '../../services/aiService'
 import type { SuggestedTask } from '../../services/aiService'
+
+// ─── Backend agent URL ────────────────────────────────────────────────────────
+const AGENT_API_URL = 'https://ei5attob.run.complete.dev'
+
+/** Map a backend Task object to SuggestedTask shape used in the UI */
+const backendTaskToSuggested = (t: any): SuggestedTask => ({
+  title:         t.title        ?? '',
+  description:   t.description  ?? '',
+  category:      t.category     ?? 'General',
+  estimatedTime: t.estimatedTime ?? '30 min',
+  priority:      t.priority     ?? 'medium',
+  subtasks: (t.subtasks ?? []).map((st: any) => ({
+    title: typeof st === 'string' ? st : (st.title ?? ''),
+  })),
+  requiresInput: t.requiresInput ?? false,
+  inputPrompt:   t.inputPrompt   ?? '',
+})
 
 interface Props { onClose: () => void }
 
@@ -67,7 +83,28 @@ export default function BulkTaskGenerationModal({ onClose }: Props) {
       const emp = employees[i]
       setResults(prev => prev.map(r => r.employee.id === emp.id ? { ...r, status: 'generating' } : r))
       try {
-        const tasks = await suggestTasksForEmployee(emp.role, emp.name, globalPrompt, docCtx)
+        const res = await fetch(`${AGENT_API_URL}/api/generate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            person_info: {
+              id:            emp.id,
+              name:          emp.name,
+              role:          emp.role,
+              team:          emp.team,
+              email:         emp.email   ?? '',
+              startDate:     emp.startDate ?? '',
+              resumeContent: (emp as any).resumeContent ?? '',
+              bio:           (emp as any).bio ?? '',
+            },
+            prompt: globalPrompt + (docCtx ? `\n\nCompany context:\n${docCtx.slice(0, 800)}` : ''),
+            assigned_by:      'admin',
+            assigned_by_name: 'Admin',
+          }),
+        })
+        if (!res.ok) throw new Error(`Server error: ${res.status}`)
+        const data = await res.json()
+        const tasks: SuggestedTask[] = (data.tasks ?? []).map(backendTaskToSuggested)
         setResults(prev => prev.map(r => r.employee.id === emp.id ? { ...r, status: 'done', tasks } : r))
       } catch {
         setResults(prev => prev.map(r => r.employee.id === emp.id ? { ...r, status: 'error' } : r))

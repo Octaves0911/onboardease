@@ -6,8 +6,31 @@ import {
 } from 'lucide-react'
 import { useApp } from '../../context/AppContext'
 import type { Employee, Task, SubTask, SupportingLink, Document } from '../../context/AppContext'
-import { sendTaskChatMessage, resetTaskChat } from '../../services/aiService'
-import type { SuggestedTask, TaskChatMessage } from '../../services/aiService'
+import type { SuggestedTask } from '../../services/aiService'
+
+// ─── Backend agent URL ────────────────────────────────────────────────────────
+const AGENT_API_URL = 'https://ei5attob.run.complete.dev'
+
+// ─── Local types ──────────────────────────────────────────────────────────────
+interface TaskChatMessage {
+  role: 'user' | 'agent'
+  content: string
+  tasks?: SuggestedTask[]
+}
+
+/** Map a backend Task object to SuggestedTask shape used in the UI pool */
+const backendTaskToSuggested = (t: any): SuggestedTask => ({
+  title:         t.title        ?? '',
+  description:   t.description  ?? '',
+  category:      t.category     ?? 'General',
+  estimatedTime: t.estimatedTime ?? '30 min',
+  priority:      t.priority     ?? 'medium',
+  subtasks: (t.subtasks ?? []).map((st: any) => ({
+    title: typeof st === 'string' ? st : (st.title ?? ''),
+  })),
+  requiresInput: t.requiresInput ?? false,
+  inputPrompt:   t.inputPrompt   ?? '',
+})
 
 interface Props {
   employee: Employee
@@ -173,10 +196,12 @@ export default function CreateTaskModal({ employee, onClose, assignedBy = 'admin
     onClose()
   }
 
-  // ── Reset agent session whenever this modal opens for a new employee ──
+  // ── Reset chat state whenever the modal opens for a new employee ──
   useEffect(() => {
-    resetTaskChat()
-    return () => { resetTaskChat() }   // also clean up on close
+    setChatHistory([])
+    setTaskPool([])
+    setChatError('')
+    setChatInput('')
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [employee.id])
 
@@ -204,12 +229,71 @@ export default function CreateTaskModal({ employee, onClose, assignedBy = 'admin
     setChatHistory(prev => [...prev, userMsg])
     setChatLoading(true)
     try {
-      const reply = await sendTaskChatMessage(msg, employee.name, employee.role, buildDocContext())
+      let agentContent: string
+      let newTasks: SuggestedTask[] = []
+
+      if (taskPool.length === 0) {
+        // ── First message → generate fresh tasks ──────────────────────────────
+        const res = await fetch(`${AGENT_API_URL}/api/generate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            person_info: {
+              id:            employee.id,
+              name:          employee.name,
+              role:          employee.role,
+              team:          employee.team,
+              email:         employee.email ?? '',
+              startDate:     employee.startDate ?? '',
+              resumeContent: employee.resumeContent ?? '',
+              bio:           employee.bio ?? '',
+            },
+            prompt:           msg,
+            assigned_by:      assignedBy,
+            assigned_by_name: assignedByName,
+          }),
+        })
+        if (!res.ok) throw new Error(`Server error: ${res.status}`)
+        const data = await res.json()
+        newTasks = (data.tasks ?? []).map(backendTaskToSuggested)
+        agentContent = data.message
+          || `I've generated ${newTasks.length} task${newTasks.length !== 1 ? 's' : ''} for ${employee.name}. Review them below — use the chat to refine any time!`
+      } else {
+        // ── Follow-up message → refine current task pool ──────────────────────
+        const res = await fetch(`${AGENT_API_URL}/api/refine`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            current_tasks:    taskPool,
+            instruction:      msg,
+            person_info: {
+              id:        employee.id,
+              name:      employee.name,
+              role:      employee.role,
+              team:      employee.team,
+              email:     employee.email ?? '',
+              startDate: employee.startDate ?? '',
+            },
+            assigned_by:      assignedBy,
+            assigned_by_name: assignedByName,
+          }),
+        })
+        if (!res.ok) throw new Error(`Server error: ${res.status}`)
+        const data = await res.json()
+        newTasks = (data.tasks ?? []).map(backendTaskToSuggested)
+        agentContent = data.message
+          ?? (data.changes_summary ? `Changes applied: ${data.changes_summary}` : `Updated to ${newTasks.length} task${newTasks.length !== 1 ? 's' : ''}.`)
+      }
+
+      const reply: TaskChatMessage = {
+        role: 'agent',
+        content: agentContent,
+        tasks: newTasks.length > 0 ? newTasks : undefined,
+      }
       setChatHistory(prev => [...prev, reply])
-      if (reply.tasks && reply.tasks.length > 0) {
-        // Merge new tasks into pool (replace all — agent's latest suggestion is authoritative)
-        setTaskPool(reply.tasks)
-        setExpandedTask(Object.fromEntries(reply.tasks.map((_, i) => [i, false])))
+      if (newTasks.length > 0) {
+        setTaskPool(newTasks)
+        setExpandedTask(Object.fromEntries(newTasks.map((_, i) => [i, false])))
       }
     } catch {
       setChatError('Agent failed to respond. Please try again.')
@@ -218,7 +302,6 @@ export default function CreateTaskModal({ employee, onClose, assignedBy = 'admin
   }
 
   const clearChat = () => {
-    resetTaskChat()
     setChatHistory([])
     setTaskPool([])
     setChatError('')
