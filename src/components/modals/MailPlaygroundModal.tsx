@@ -6,6 +6,9 @@ import {
 } from 'lucide-react'
 import { useApp } from '../../context/AppContext'
 import type { Task } from '../../context/AppContext'
+import { generateAIEmailReply } from '../../services/aiService'
+import type { ConversationTurn } from '../../services/aiService'
+import MarkdownRenderer from '../common/MarkdownRenderer'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -81,6 +84,14 @@ const REPLY_TEMPLATES = [
 function generateAutoReply(prospect: Prospect, subject: string, replyIndex: number): string {
   const template = REPLY_TEMPLATES[replyIndex % REPLY_TEMPLATES.length]
   return template(prospect, subject)
+}
+
+/** Converts a thread's message list into AIML-compatible conversation history */
+function buildConversationHistory(messages: EmailMessage[]): ConversationTurn[] {
+  return messages.map(msg => ({
+    role: msg.direction === 'sent' ? ('user' as const) : ('assistant' as const),
+    content: msg.body,
+  }))
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -272,12 +283,20 @@ export default function MailPlaygroundModal({ task, onClose, onMarkDone }: Props
     setComposing(false)
     setCompTo(''); setCompSubject(''); setCompBody(''); setCompAttachments([])
 
-    // Simulate prospect typing & reply
+    // Simulate prospect typing & reply (AI-powered)
     setWaitingReply(prev => new Set(prev).add(thread.id))
-    const delay = 2000 + Math.random() * 3000
+    const delay = 1500 + Math.random() * 2000
     await new Promise(r => setTimeout(r, delay))
 
-    const replyText = generateAutoReply(prospect, sentMsg.subject, replyCountRef.current++)
+    const history = buildConversationHistory([sentMsg])
+    const aiReply = await generateAIEmailReply(
+      { name: prospect.name, email: prospect.email, company: prospect.company, role: prospect.role },
+      sentMsg.subject,
+      [], // first message — no prior history
+      sentMsg.body,
+    )
+    const replyText = aiReply ?? generateAutoReply(prospect, sentMsg.subject, replyCountRef.current++)
+    replyCountRef.current++
     const replyMsg: EmailMessage = {
       id:          `msg-${Date.now()}-r`,
       from:        prospect.name,
@@ -329,11 +348,25 @@ export default function MailPlaygroundModal({ task, onClose, onMarkDone }: Props
     setActiveThread(prev => prev ? { ...prev, messages: updatedMsgs } : null)
     setReplyBody(''); setReplyAttachments([]); setReplyOpen(false)
 
-    // Auto-reply
+    // Auto-reply (AI-powered, context-aware)
     setWaitingReply(prev => new Set(prev).add(activeThread.id))
-    await new Promise(r => setTimeout(r, 2500 + Math.random() * 3000))
+    await new Promise(r => setTimeout(r, 1500 + Math.random() * 2000))
 
-    const replyText = generateAutoReply(activeThread.prospect, activeThread.subject, replyCountRef.current++)
+    // Build full conversation history from the thread (before this latest reply)
+    const history = buildConversationHistory(activeThread.messages)
+    const aiReply = await generateAIEmailReply(
+      {
+        name: activeThread.prospect.name,
+        email: activeThread.prospect.email,
+        company: activeThread.prospect.company,
+        role: activeThread.prospect.role,
+      },
+      activeThread.subject,
+      history,
+      sentMsg.body,
+    )
+    const replyText = aiReply ?? generateAutoReply(activeThread.prospect, activeThread.subject, replyCountRef.current++)
+    replyCountRef.current++
     const autoReply: EmailMessage = {
       id:          `msg-${Date.now()}-r`,
       from:        activeThread.prospect.name,
@@ -379,7 +412,7 @@ export default function MailPlaygroundModal({ task, onClose, onMarkDone }: Props
           </div>
           <div>
             <p className="text-sm font-bold text-gray-900 leading-none">{task.title}</p>
-            <p className="text-[10px] text-gray-400 mt-0.5">💰 Sales Mail Playground · practice your pitch — responses are simulated</p>
+            <p className="text-[10px] text-gray-400 mt-0.5">💰 Sales Mail Playground · practice your pitch — responses powered by AI agent</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -633,7 +666,15 @@ export default function MailPlaygroundModal({ task, onClose, onMarkDone }: Props
                               ? `To: ${msg.to} <${msg.toEmail}>`
                               : `From: ${msg.from} <${msg.fromEmail}>`}
                           </p>
-                          <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.body}</p>
+                          {msg.direction === 'received' ? (
+                            <MarkdownRenderer
+                              content={msg.body}
+                              theme="light"
+                              className="mt-0.5"
+                            />
+                          ) : (
+                            <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.body}</p>
+                          )}
 
                           {msg.attachments.length > 0 && (
                             <div className={`mt-3 pt-3 flex flex-wrap gap-1.5 ${msg.direction === 'sent' ? 'border-t border-orange-400/30' : 'border-t border-gray-100'}`}>
@@ -760,7 +801,7 @@ export default function MailPlaygroundModal({ task, onClose, onMarkDone }: Props
                 </div>
                 <p className="text-lg font-bold text-gray-800 mb-2">Sales Mail Playground</p>
                 <p className="text-sm text-gray-500 mb-2 leading-relaxed">
-                  Practice your sales pitch by writing cold emails. You'll receive realistic prospect responses to help you improve.
+                  Practice your sales pitch by writing cold emails. An AI agent will reply as a real B2B client — ask tough questions, raise objections, and push back to test your skills.
                 </p>
                 <p className="text-xs text-gray-400 mb-5">
                   Attach PDFs, decks, or docs to simulate real outreach.

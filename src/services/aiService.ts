@@ -9,9 +9,10 @@ const TASK_AGENT_ID    = 'task_generator'    // dedicated task-generation agent
 
 // ─── AIML API (OnboardBot) ────────────────────────────────────────────────────
 // Uses AIML API with GPT-4o for intelligent, context-aware OnboardBot responses.
-const AIML_API_URL  = 'https://api.aimlapi.com'
-const AIML_API_KEY  = 'd0c5aca687c84490a2106daaa4af76a5'
-const AIML_MODEL    = 'gpt-4o'              // high-capability model for OnboardBot
+const AIML_API_URL        = 'https://api.aimlapi.com'
+const AIML_API_KEY        = 'd0c5aca687c84490a2106daaa4af76a5'
+const AIML_MODEL          = 'gpt-4o'              // high-capability model for OnboardBot
+const AIML_SALES_MODEL    = 'gpt-4o'              // model for email simulation agent
 
 /**
  * Calls AIML API chat completions with proper system/user/assistant message format.
@@ -1040,4 +1041,164 @@ export function parseTasksFromResponse(response: string): ParsedTask[] {
   }
 
   return tasks.slice(0, 12)
+}
+
+// ─── Sales Email Simulation Agent ────────────────────────────────────────────
+// Uses AIML API with gpt-5-chat-latest to simulate a realistic B2B client
+// responding to a salesperson pitching OnboardEase. The agent is context-aware,
+// maintains full conversation history, and occasionally applies business friction
+// (competitor objections, compliance questions, budget holds, escalation requests)
+// to test how the salesperson handles real-world deal dynamics.
+
+export interface EmailProspect {
+  name: string
+  email: string
+  company: string
+  role: string
+}
+
+export interface ConversationTurn {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+function buildClientSystemPrompt(prospect: EmailProspect, subject: string): string {
+  return `You are ${prospect.name}, ${prospect.role} at ${prospect.company}. You are a busy, experienced B2B decision-maker receiving a sales email from a salesperson at OnboardEase — an AI-powered employee onboarding platform that helps companies automate and personalise new-hire experiences, track onboarding progress, assign role-specific tasks, and reduce time-to-productivity.
+
+Your behaviour rules:
+1. Reply ONLY as ${prospect.name} — write a professional business email reply (no role-play narration, no quotation marks, no preamble like "Here is my reply:").
+2. You are genuinely evaluating the product but you are NOT a pushover. Make the salesperson work for the deal.
+3. Vary your stance realistically across turns. You may: ask tough clarifying questions, mention a competitor you already use (Workday, BambooHR, ServiceNow HRSD, Rippling), raise budget/procurement concerns, flag compliance requirements (GDPR, SOC 2, SSO/SAML), request references or case studies, forward to another stakeholder, or express cautious interest if the salesperson answers well.
+4. Occasionally (roughly 1 in 3 replies) introduce a realistic objection or challenge that makes the deal harder — but never be rude.
+5. If the salesperson provides a strong, specific response to your concern, soften your position slightly and move the conversation forward (e.g., agree to a demo, ask for pricing, loop in a colleague).
+6. Keep replies concise — 3 to 6 sentences or short bullet points, matching a real business email tone.
+7. Sign off as: ${prospect.name} | ${prospect.role}, ${prospect.company}
+8. The email thread subject is: "${subject}".`
+}
+
+/**
+ * Calls AIML API with the email simulation model to generate a realistic client reply.
+ * @param prospect      The simulated prospect persona
+ * @param subject       Email thread subject
+ * @param history       All previous turns as {role, content} pairs (user = salesperson, assistant = prospect)
+ * @param latestEmail   The salesperson's latest email body
+ * @returns             AI-generated reply text, or null on failure
+ */
+export async function generateAIEmailReply(
+  prospect: EmailProspect,
+  subject: string,
+  history: ConversationTurn[],
+  latestEmail: string
+): Promise<string | null> {
+  const systemPrompt = buildClientSystemPrompt(prospect, subject)
+  try {
+    const res = await fetch(`${AIML_API_URL}/v1/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${AIML_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: AIML_SALES_MODEL,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          ...history,
+          { role: 'user', content: latestEmail },
+        ],
+        max_tokens: 512,
+        temperature: 0.85,
+      }),
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    return data.choices?.[0]?.message?.content?.trim() ?? null
+  } catch {
+    return null
+  }
+}
+
+// ─── Code Assistant Agent ─────────────────────────────────────────────────────
+// Uses AIML API to power an in-editor AI assistant with full project context.
+// The agent can answer questions, suggest code, debug errors, and explain
+// concepts — all with awareness of every file open in the playground.
+
+export interface CodeAssistantMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface ProjectFile {
+  name: string
+  language: string
+  content: string
+}
+
+/**
+ * Sends a message to the AI code assistant with full project file context.
+ * @param taskTitle      Title of the current onboarding task
+ * @param taskDescription Description of the task
+ * @param files          All files currently open in the playground
+ * @param activeFileName The file currently open in the editor
+ * @param history        Prior conversation turns
+ * @param userMessage    The user's latest message
+ * @returns              AI assistant reply, or null on failure
+ */
+export async function generateCodeAssistantReply(
+  taskTitle: string,
+  taskDescription: string,
+  files: ProjectFile[],
+  activeFileName: string,
+  history: CodeAssistantMessage[],
+  userMessage: string
+): Promise<string | null> {
+  const fileContext = files
+    .map(f => `### File: ${f.name}\n\`\`\`${f.language}\n${f.content}\n\`\`\``)
+    .join('\n\n')
+
+  const systemPrompt = `You are an expert AI code assistant embedded inside a VS Code-style playground editor. You have full read access to every file in the project.
+
+## Current Task
+Title: "${taskTitle}"
+Description: "${taskDescription}"
+
+## Project Files (full source)
+${fileContext}
+
+## Active File
+The user is currently viewing: **${activeFileName}**
+
+## Your Role
+- Help the user write, improve, and debug code across ALL files in the project
+- Answer questions about the code, explain patterns or functions, and spot bugs
+- Suggest complete code snippets that the user can copy directly into the editor
+- If asked to write code, produce ready-to-paste blocks wrapped in triple-backtick fences with the language tag (e.g. \`\`\`javascript)
+- When debugging, reference the exact file name and line context
+- Be concise — this is a chat panel, not a blog post
+- If asked to explain something, give a short explanation followed by an example
+- Always be aware of the full project structure before answering`
+
+  try {
+    const res = await fetch(`${AIML_API_URL}/v1/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${AIML_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: AIML_SALES_MODEL,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          ...history,
+          { role: 'user', content: userMessage },
+        ],
+        max_tokens: 1024,
+        temperature: 0.3,
+      }),
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    return data.choices?.[0]?.message?.content?.trim() ?? null
+  } catch {
+    return null
+  }
 }
