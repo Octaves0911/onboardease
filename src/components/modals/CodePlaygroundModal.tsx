@@ -3,9 +3,13 @@ import Editor from '@monaco-editor/react'
 import {
   X, Plus, Trash2, Play, Terminal, FileCode, FileText,
   File, FolderOpen, ChevronRight, FlaskConical, RefreshCw,
+  Bot, Send, Sparkles, ChevronLeft, Loader2,
 } from 'lucide-react'
 import { useApp } from '../../context/AppContext'
 import type { Task } from '../../context/AppContext'
+import { generateCodeAssistantReply } from '../../services/aiService'
+import type { CodeAssistantMessage } from '../../services/aiService'
+import MarkdownRenderer from '../common/MarkdownRenderer'
 
 // ─── File node ────────────────────────────────────────────────────────────────
 
@@ -264,6 +268,42 @@ function runJavaScript(code: string): string {
   }
 }
 
+// ─── AI Message bubble ────────────────────────────────────────────────────────
+
+function AiMessageBubble({ msg }: { msg: CodeAssistantMessage }) {
+  if (msg.role === 'user') {
+    return (
+      <div className="flex justify-end mb-3">
+        <div className="max-w-[88%] bg-teal-600/25 border border-teal-500/30 rounded-2xl rounded-tr-sm px-3 py-2">
+          <p className="text-xs text-white/90 leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex gap-2 mb-4">
+      <div className="w-6 h-6 rounded-full bg-purple-600 flex items-center justify-center flex-shrink-0 mt-0.5 shadow-sm">
+        <Bot size={11} className="text-white" />
+      </div>
+      <div className="flex-1 min-w-0 bg-[#1a1a2e] border border-white/10 rounded-2xl rounded-tl-sm px-3 py-2.5">
+        <MarkdownRenderer content={msg.content} theme="dark" />
+      </div>
+    </div>
+  )
+}
+
+// ─── Quick prompt chips ───────────────────────────────────────────────────────
+
+const QUICK_PROMPTS = [
+  { label: 'Explain this file', prompt: 'Explain what the active file does in plain English.' },
+  { label: 'Find bugs', prompt: 'Review the active file and point out any bugs, errors, or potential issues.' },
+  { label: 'Improve code', prompt: 'Suggest improvements to make the active file more readable, efficient, or correct.' },
+  { label: 'Write tests', prompt: 'Write unit tests for the functions in the active file.' },
+  { label: 'Add comments', prompt: 'Add helpful inline comments to the active file to explain what each section does.' },
+  { label: 'How does it work?', prompt: 'Walk me through exactly how this code works step by step.' },
+]
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 interface Props {
@@ -287,14 +327,61 @@ export default function CodePlaygroundModal({ task, onClose, onMarkDone }: Props
   const [showNewFile, setShowNewFile] = useState(false)
   const [running,     setRunning]     = useState(false)
 
+  // ── AI panel draggable width ──────────────────────────────────────────────
+  const [aiPanelWidth,   setAiPanelWidth]   = useState(320)
+  const isDragging    = useRef(false)
+  const dragStartX    = useRef(0)
+  const dragStartW    = useRef(0)
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!isDragging.current) return
+      // Moving left (negative dx) INCREASES panel width since handle is on left edge
+      const dx      = dragStartX.current - e.clientX
+      const newW    = Math.max(240, Math.min(620, dragStartW.current + dx))
+      setAiPanelWidth(newW)
+    }
+    const onUp = () => { isDragging.current = false }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup',   onUp)
+    return () => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup',   onUp)
+    }
+  }, [])
+
+  const startDrag = (e: React.MouseEvent) => {
+    isDragging.current   = true
+    dragStartX.current   = e.clientX
+    dragStartW.current   = aiPanelWidth
+    e.preventDefault()
+  }
+
+  // ── AI Assistant state ────────────────────────────────────────────────────
+  const [showAI,     setShowAI]     = useState(true)
+  const [aiMessages, setAiMessages] = useState<CodeAssistantMessage[]>([
+    {
+      role: 'assistant',
+      content: `👋 Hi! I'm your AI code assistant.\n\nI have full access to all ${initialFiles.length} file${initialFiles.length !== 1 ? 's' : ''} in this playground and I know the context of your task.\n\nAsk me anything — I can help you write code, explain logic, debug errors, or suggest improvements.`,
+    },
+  ])
+  const [aiInput,   setAiInput]   = useState('')
+  const [aiLoading, setAiLoading] = useState(false)
+  const aiEndRef   = useRef<HTMLDivElement>(null)
+  const aiInputRef = useRef<HTMLTextAreaElement>(null)
+
   const activeFile = files.find(f => f.id === activeId)
+
+  // ── Auto-scroll AI chat ───────────────────────────────────────────────────
+  useEffect(() => {
+    aiEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [aiMessages, aiLoading])
 
   // ── Auto-save (debounced 800 ms) whenever files or activeId change ────────
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const mountedRef   = useRef(false)
 
   useEffect(() => {
-    // Skip the very first render so we don't overwrite saved state on mount
     if (!mountedRef.current) { mountedRef.current = true; return }
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     saveTimerRef.current = setTimeout(() => {
@@ -346,7 +433,7 @@ export default function CodePlaygroundModal({ task, onClose, onMarkDone }: Props
     if (!activeFile) return
     setRunning(true)
     setShowConsole(true)
-    await new Promise(r => setTimeout(r, 150)) // brief visual feedback
+    await new Promise(r => setTimeout(r, 150))
     if (activeFile.language === 'javascript' || activeFile.language === 'typescript') {
       setOutput(runJavaScript(activeFile.content))
     } else {
@@ -356,6 +443,46 @@ export default function CodePlaygroundModal({ task, onClose, onMarkDone }: Props
   }
 
   const clearOutput = () => setOutput('')
+
+  // ── Send message to AI assistant ──────────────────────────────────────────
+  const sendAiMessage = async (text?: string) => {
+    const msg = (text ?? aiInput).trim()
+    if (!msg || aiLoading) return
+    setAiInput('')
+
+    const userMsg: CodeAssistantMessage = { role: 'user', content: msg }
+    const nextHistory = [...aiMessages, userMsg]
+    setAiMessages(nextHistory)
+    setAiLoading(true)
+
+    const projectFiles = files.map(f => ({ name: f.name, language: f.language, content: f.content }))
+    const historyForApi = nextHistory.filter(m => m.role !== 'assistant' || nextHistory.indexOf(m) > 0)
+
+    const reply = await generateCodeAssistantReply(
+      task.title,
+      task.description,
+      projectFiles,
+      activeFile?.name ?? '',
+      historyForApi.slice(-10),   // last 10 turns for context window efficiency
+      msg,
+    )
+
+    setAiMessages(prev => [
+      ...prev,
+      {
+        role: 'assistant',
+        content: reply ?? '⚠️ I couldn\'t reach the AI right now. Please check your connection and try again.',
+      },
+    ])
+    setAiLoading(false)
+  }
+
+  const handleAiKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      sendAiMessage()
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-[60] flex flex-col bg-[#1e1e2e]" style={{ fontFamily: 'inherit' }}>
@@ -391,6 +518,18 @@ export default function CodePlaygroundModal({ task, onClose, onMarkDone }: Props
             }`}
           >
             <Terminal size={11} /> Console
+          </button>
+
+          {/* AI Assistant toggle */}
+          <button
+            onClick={() => setShowAI(v => !v)}
+            className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg transition-colors ${
+              showAI
+                ? 'bg-purple-600 text-white shadow-md shadow-purple-900/40'
+                : 'bg-white/10 hover:bg-white/20 text-white/70'
+            }`}
+          >
+            <Sparkles size={11} /> AI Assistant
           </button>
 
           {/* Mark done */}
@@ -494,7 +633,7 @@ export default function CodePlaygroundModal({ task, onClose, onMarkDone }: Props
           )}
         </div>
 
-        {/* ── Editor + console (right) ─────────────────────────────────────── */}
+        {/* ── Editor + console (center) ────────────────────────────────────── */}
         <div className="flex-1 flex flex-col min-w-0">
 
           {/* Tab bar */}
@@ -580,6 +719,113 @@ export default function CodePlaygroundModal({ task, onClose, onMarkDone }: Props
             </div>
           )}
         </div>
+
+        {/* ── AI Assistant pane (right) ────────────────────────────────────── */}
+        {showAI && (
+          <div
+            className="bg-[#13132a] border-l border-white/10 flex flex-col flex-shrink-0 relative"
+            style={{ width: aiPanelWidth }}
+          >
+            {/* Drag handle — left edge */}
+            <div
+              onMouseDown={startDrag}
+              className="absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize z-10 group"
+              title="Drag to resize"
+            >
+              <div className="absolute inset-y-0 left-0 w-0.5 bg-transparent group-hover:bg-purple-500/50 transition-colors" />
+
+            </div>
+
+            {/* AI pane header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 bg-[#0e0e20] flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded-full bg-purple-600 flex items-center justify-center">
+                  <Sparkles size={11} className="text-white" />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-white leading-none">AI Code Assistant</p>
+                  <p className="text-[9px] text-white/40 mt-0.5">{files.length} file{files.length !== 1 ? 's' : ''} in context · {activeFile?.name ?? 'no file'} active</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowAI(false)}
+                className="p-1 rounded hover:bg-white/10 text-white/30 hover:text-white/60 transition-colors"
+              >
+                <ChevronLeft size={13} />
+              </button>
+            </div>
+
+            {/* Quick prompts */}
+            <div className="px-3 pt-3 pb-2 border-b border-white/5 flex-shrink-0">
+              <p className="text-[9px] font-bold text-white/25 uppercase tracking-wider mb-2">Quick Actions</p>
+              <div className="flex flex-wrap gap-1.5">
+                {QUICK_PROMPTS.map(q => (
+                  <button
+                    key={q.label}
+                    onClick={() => sendAiMessage(q.prompt)}
+                    disabled={aiLoading}
+                    className="text-[10px] px-2.5 py-1 rounded-full bg-white/5 hover:bg-purple-600/30 hover:text-purple-300 text-white/50 border border-white/10 hover:border-purple-500/40 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {q.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Messages */}
+            <div className="flex-1 overflow-y-auto px-3 py-3">
+              {aiMessages.map((msg, i) => (
+                <AiMessageBubble key={i} msg={msg} />
+              ))}
+
+              {/* Loading indicator */}
+              {aiLoading && (
+                <div className="flex gap-2 mb-3">
+                  <div className="w-6 h-6 rounded-full bg-purple-600 flex items-center justify-center flex-shrink-0">
+                    <Loader2 size={11} className="text-white animate-spin" />
+                  </div>
+                  <div className="bg-[#1a1a2e] border border-white/10 rounded-2xl rounded-tl-sm px-3 py-2.5">
+                    <div className="flex items-center gap-1">
+                      {[0, 1, 2].map(i => (
+                        <span
+                          key={i}
+                          className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-bounce"
+                          style={{ animationDelay: `${i * 0.15}s` }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+              <div ref={aiEndRef} />
+            </div>
+
+            {/* Input */}
+            <div className="px-3 pb-3 pt-2 border-t border-white/10 flex-shrink-0">
+              <div className="flex items-end gap-2 bg-[#0f0f1a] border border-white/10 rounded-xl px-3 py-2 focus-within:border-purple-500/50 transition-colors">
+                <textarea
+                  ref={aiInputRef}
+                  value={aiInput}
+                  onChange={e => setAiInput(e.target.value)}
+                  onKeyDown={handleAiKeyDown}
+                  placeholder="Ask about your code… (Enter to send)"
+                  disabled={aiLoading}
+                  rows={2}
+                  className="flex-1 bg-transparent text-xs text-white/80 placeholder-white/20 focus:outline-none resize-none leading-relaxed disabled:opacity-50"
+                  style={{ maxHeight: 80 }}
+                />
+                <button
+                  onClick={() => sendAiMessage()}
+                  disabled={!aiInput.trim() || aiLoading}
+                  className="p-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 disabled:opacity-30 disabled:cursor-not-allowed text-white transition-colors flex-shrink-0"
+                >
+                  <Send size={12} />
+                </button>
+              </div>
+              <p className="text-[9px] text-white/20 mt-1.5 text-center">Shift+Enter for new line · Enter to send</p>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
