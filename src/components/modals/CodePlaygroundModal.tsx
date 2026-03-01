@@ -1,0 +1,586 @@
+import { useState, useCallback, useEffect, useRef } from 'react'
+import Editor from '@monaco-editor/react'
+import {
+  X, Plus, Trash2, Play, Terminal, FileCode, FileText,
+  File, FolderOpen, ChevronRight, FlaskConical, RefreshCw,
+} from 'lucide-react'
+import { useApp } from '../../context/AppContext'
+import type { Task } from '../../context/AppContext'
+
+// ─── File node ────────────────────────────────────────────────────────────────
+
+interface FileNode {
+  id: string
+  name: string
+  language: string
+  content: string
+}
+
+// ─── Pre-populate files based on task category/title ─────────────────────────
+
+function getInitialFiles(task: Task): FileNode[] {
+  const cat   = (task.category   ?? '').toLowerCase()
+  const title = (task.title      ?? '').toLowerCase()
+  const desc  = (task.description ?? '')
+
+  const isEngineering = cat.includes('technical') || cat.includes('setup') || cat.includes('tools') ||
+    title.includes('code') || title.includes('react') || title.includes('develop') ||
+    title.includes('github') || title.includes('environment') || title.includes('api') ||
+    title.includes('script') || title.includes('test') || title.includes('deploy')
+
+  const isCompliance = cat.includes('compliance') || cat.includes('learning') || cat.includes('admin')
+
+  if (isEngineering) {
+    return [
+      {
+        id: '1', name: 'index.html', language: 'html',
+        content: `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${task.title}</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <h1>🧪 Playground — ${task.title}</h1>
+    <p class="subtitle">${desc || 'Practice sandbox — experiment freely!'}</p>
+    <div id="output"></div>
+  </div>
+  <script src="script.js"></script>
+</body>
+</html>`,
+      },
+      {
+        id: '2', name: 'script.js', language: 'javascript',
+        content: `// ── ${task.title} ──────────────────────────────────────
+// Sandbox environment — experiment freely, nothing here affects real progress.
+
+// Example: modify this function and click Run to see output
+function greet(name) {
+  return \`👋 Hello, \${name}! Welcome to the playground.\`;
+}
+
+// Try it out
+const message = greet('New Hire');
+console.log(message);
+
+// ── Your practice code below ────────────────────────────
+// TODO: Try out the concepts from this task here!
+`,
+      },
+      {
+        id: '3', name: 'styles.css', language: 'css',
+        content: `/* ── ${task.title} — Styles ─────────────────────────── */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #0f172a;
+  color: #e2e8f0;
+  min-height: 100vh;
+  padding: 2rem;
+}
+
+#app {
+  max-width: 800px;
+  margin: 0 auto;
+  background: #1e293b;
+  border-radius: 16px;
+  padding: 2rem;
+  box-shadow: 0 4px 32px rgba(0,0,0,0.4);
+}
+
+h1 { font-size: 1.5rem; color: #2dd4bf; margin-bottom: 0.5rem; }
+.subtitle { color: #94a3b8; font-size: 0.9rem; margin-bottom: 1.5rem; }
+#output { margin-top: 1rem; padding: 1rem; background: #0f172a; border-radius: 8px; }
+`,
+      },
+      {
+        id: '4', name: 'notes.md', language: 'markdown',
+        content: `# ${task.title} — Sandbox Notes
+
+## Task Description
+${desc || 'Use this space to practice and explore.'}
+
+## My Progress
+${(task.subtasks ?? []).map(s => `- [ ] ${s.title}`).join('\n') || '- [ ] Complete practice\n- [ ] Review output\n- [ ] Note key learnings'}
+
+## Key Learnings
+> Write your observations here…
+
+## Questions
+1.
+2.
+3.
+`,
+      },
+    ]
+  }
+
+  if (isCompliance) {
+    return [
+      {
+        id: '1', name: 'study-notes.md', language: 'markdown',
+        content: `# ${task.title} — Study Notes
+
+## Overview
+${desc || 'Document your key learnings and notes here.'}
+
+## Key Points
+-
+-
+-
+
+## Summary
+> Write a brief summary of what you've learned…
+
+## Questions for Mentor
+1.
+2.
+`,
+      },
+      {
+        id: '2', name: 'checklist.md', language: 'markdown',
+        content: `# ${task.title} — Checklist
+
+${(task.subtasks ?? []).map(s => `- [ ] ${s.title}`).join('\n') || '- [ ] Read the material\n- [ ] Complete the quiz\n- [ ] Discuss with mentor'}
+
+## Notes
+> Add any additional observations here…
+`,
+      },
+      {
+        id: '3', name: 'quiz.js', language: 'javascript',
+        content: `// ${task.title} — Self-Quiz
+// Test your understanding by filling in the answers below.
+
+const quiz = [
+  {
+    question: "What is the main goal of this task?",
+    answer: "", // TODO: fill in your answer
+  },
+  {
+    question: "List one key policy or requirement from this task:",
+    answer: "", // TODO: fill in your answer
+  },
+  {
+    question: "How does this apply to your daily work?",
+    answer: "", // TODO: fill in your answer
+  },
+];
+
+// Check your answers
+quiz.forEach((q, i) => {
+  console.log(\`Q\${i + 1}: \${q.question}\`);
+  console.log(\`A: \${q.answer || '(not answered yet)'}\`);
+  console.log('---');
+});
+`,
+      },
+    ]
+  }
+
+  // Default — general workspace
+  return [
+    {
+      id: '1', name: 'workspace.md', language: 'markdown',
+      content: `# ${task.title}
+
+## Description
+${desc || 'Practice workspace for this task.'}
+
+## Notes
+Add your notes here…
+
+## Progress
+${(task.subtasks ?? []).map(s => `- [ ] ${s.title}`).join('\n') || '- [ ] Complete the task'}
+`,
+    },
+    {
+      id: '2', name: 'practice.js', language: 'javascript',
+      content: `// ${task.title} — Practice Script
+// Use this space to try out any concepts related to this task.
+
+console.log("🧪 Playground ready!");
+
+// TODO: Add your practice code here
+`,
+    },
+    {
+      id: '3', name: 'scratch.json', language: 'json',
+      content: `{
+  "task": "${task.title}",
+  "notes": [],
+  "progress": 0,
+  "completed": false
+}
+`,
+    },
+  ]
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function getFileIcon(name: string) {
+  const ext = name.split('.').pop()?.toLowerCase()
+  if (['js', 'jsx'].includes(ext ?? ''))   return <FileCode size={13} className="text-yellow-400 flex-shrink-0" />
+  if (['ts', 'tsx'].includes(ext ?? ''))   return <FileCode size={13} className="text-blue-400 flex-shrink-0" />
+  if (['css', 'scss'].includes(ext ?? '')) return <FileCode size={13} className="text-sky-400 flex-shrink-0" />
+  if (ext === 'html')                      return <FileCode size={13} className="text-orange-400 flex-shrink-0" />
+  if (ext === 'md')                        return <FileText size={13} className="text-green-400 flex-shrink-0" />
+  if (ext === 'json')                      return <FileText size={13} className="text-amber-400 flex-shrink-0" />
+  return <File size={13} className="text-white/40 flex-shrink-0" />
+}
+
+function langFromName(name: string): string {
+  const ext = name.split('.').pop()?.toLowerCase()
+  if (ext === 'js'   || ext === 'jsx') return 'javascript'
+  if (ext === 'ts'   || ext === 'tsx') return 'typescript'
+  if (ext === 'css'  || ext === 'scss') return 'css'
+  if (ext === 'html') return 'html'
+  if (ext === 'md')   return 'markdown'
+  if (ext === 'json') return 'json'
+  return 'plaintext'
+}
+
+// Safe JS sandbox using Function constructor
+function runJavaScript(code: string): string {
+  const logs: string[] = []
+  try {
+    const sandboxConsole = {
+      log:   (...args: any[]) => logs.push(args.map(a => typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a)).join(' ')),
+      error: (...args: any[]) => logs.push('❌ Error: ' + args.join(' ')),
+      warn:  (...args: any[]) => logs.push('⚠️  Warning: ' + args.join(' ')),
+      info:  (...args: any[]) => logs.push('ℹ️  ' + args.join(' ')),
+    }
+    // eslint-disable-next-line no-new-func
+    const fn = new Function('console', code)
+    fn(sandboxConsole)
+    return logs.length > 0 ? logs.join('\n') : '✓ Ran successfully — no output'
+  } catch (err: any) {
+    return `✗ Runtime error: ${err.message}`
+  }
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
+interface Props {
+  task: Task
+  onClose: () => void
+  onMarkDone: () => void
+}
+
+export default function CodePlaygroundModal({ task, onClose, onMarkDone }: Props) {
+  const { dispatch } = useApp()
+
+  // ── Restore from saved state or start fresh ──────────────────────────────
+  const savedState   = task.playgroundState
+  const initialFiles = savedState?.codeFiles?.length ? (savedState.codeFiles as FileNode[]) : getInitialFiles(task)
+
+  const [files,       setFiles]       = useState<FileNode[]>(initialFiles)
+  const [activeId,    setActiveId]    = useState<string>(savedState?.codeActiveId ?? initialFiles[0]?.id ?? '')
+  const [output,      setOutput]      = useState<string>('')
+  const [showConsole, setShowConsole] = useState(false)
+  const [newFileName, setNewFileName] = useState('')
+  const [showNewFile, setShowNewFile] = useState(false)
+  const [running,     setRunning]     = useState(false)
+
+  const activeFile = files.find(f => f.id === activeId)
+
+  // ── Auto-save (debounced 800 ms) whenever files or activeId change ────────
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const mountedRef   = useRef(false)
+
+  useEffect(() => {
+    // Skip the very first render so we don't overwrite saved state on mount
+    if (!mountedRef.current) { mountedRef.current = true; return }
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    saveTimerRef.current = setTimeout(() => {
+      dispatch({
+        type: 'UPDATE_TASK',
+        payload: {
+          id: task.id,
+          updates: {
+            playgroundState: {
+              codeFiles:    files,
+              codeActiveId: activeId,
+              lastSaved:    new Date().toISOString(),
+            },
+          },
+        },
+      })
+    }, 800)
+    return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current) }
+  }, [files, activeId])
+
+  const updateContent = useCallback((value: string | undefined) => {
+    setFiles(prev => prev.map(f => f.id === activeId ? { ...f, content: value ?? '' } : f))
+  }, [activeId])
+
+  const addFile = () => {
+    const name = newFileName.trim()
+    if (!name) return
+    const newFile: FileNode = {
+      id:       Date.now().toString(),
+      name,
+      language: langFromName(name),
+      content:  `// ${name}\n`,
+    }
+    setFiles(prev => [...prev, newFile])
+    setActiveId(newFile.id)
+    setNewFileName('')
+    setShowNewFile(false)
+  }
+
+  const deleteFile = (id: string) => {
+    setFiles(prev => {
+      const next = prev.filter(f => f.id !== id)
+      if (activeId === id && next.length > 0) setActiveId(next[0].id)
+      return next
+    })
+  }
+
+  const runCode = async () => {
+    if (!activeFile) return
+    setRunning(true)
+    setShowConsole(true)
+    await new Promise(r => setTimeout(r, 150)) // brief visual feedback
+    if (activeFile.language === 'javascript' || activeFile.language === 'typescript') {
+      setOutput(runJavaScript(activeFile.content))
+    } else {
+      setOutput(`ℹ️  Run is available for JavaScript/TypeScript files.\nCurrent file: ${activeFile.name} (${activeFile.language})\n\nTip: Create a .js file to execute code.`)
+    }
+    setRunning(false)
+  }
+
+  const clearOutput = () => setOutput('')
+
+  return (
+    <div className="fixed inset-0 z-[60] flex flex-col bg-[#1e1e2e]" style={{ fontFamily: 'inherit' }}>
+
+      {/* ── Top bar ─────────────────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between px-4 py-2.5 bg-[#12121f] border-b border-white/10 flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-teal-500/20 border border-teal-500/30 flex items-center justify-center">
+            <FlaskConical size={15} className="text-teal-400" />
+          </div>
+          <div>
+            <p className="text-sm font-bold text-white leading-none">{task.title}</p>
+            <p className="text-[10px] text-white/40 mt-0.5">🧪 Sandbox · changes don't affect your real progress</p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {/* Run */}
+          <button
+            onClick={runCode}
+            disabled={running}
+            className="flex items-center gap-1.5 text-xs font-bold bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg transition-colors"
+          >
+            {running ? <RefreshCw size={11} className="animate-spin" /> : <Play size={11} />}
+            {running ? 'Running…' : 'Run'}
+          </button>
+
+          {/* Console toggle */}
+          <button
+            onClick={() => setShowConsole(v => !v)}
+            className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg transition-colors ${
+              showConsole ? 'bg-teal-600 text-white' : 'bg-white/10 hover:bg-white/20 text-white/70'
+            }`}
+          >
+            <Terminal size={11} /> Console
+          </button>
+
+          {/* Mark done */}
+          <button
+            onClick={onMarkDone}
+            className="text-xs font-bold bg-teal-600 hover:bg-teal-500 text-white px-3 py-1.5 rounded-lg transition-colors"
+          >
+            ✓ Mark Done
+          </button>
+
+          {/* Close */}
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg hover:bg-white/10 text-white/50 hover:text-white transition-colors"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      </div>
+
+      {/* ── Main body ───────────────────────────────────────────────────────── */}
+      <div className="flex flex-1 min-h-0">
+
+        {/* ── File browser (left) ─────────────────────────────────────────── */}
+        <div className="w-52 bg-[#16162a] border-r border-white/10 flex flex-col flex-shrink-0">
+
+          {/* Explorer header */}
+          <div className="flex items-center justify-between px-3 py-2.5 border-b border-white/10">
+            <div className="flex items-center gap-1.5">
+              <FolderOpen size={11} className="text-white/30" />
+              <span className="text-[10px] font-bold text-white/40 uppercase tracking-wider">Files</span>
+            </div>
+            <button
+              onClick={() => setShowNewFile(v => !v)}
+              className="p-1 rounded hover:bg-white/10 text-white/40 hover:text-white/80 transition-colors"
+              title="New file"
+            >
+              <Plus size={13} />
+            </button>
+          </div>
+
+          {/* New file input */}
+          {showNewFile && (
+            <div className="px-2 pt-2 pb-1 border-b border-white/10">
+              <input
+                autoFocus
+                value={newFileName}
+                onChange={e => setNewFileName(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter')  { addFile() }
+                  if (e.key === 'Escape') { setShowNewFile(false); setNewFileName('') }
+                }}
+                placeholder="filename.js"
+                className="w-full bg-[#0f0f1a] text-white text-xs px-2 py-1.5 rounded border border-teal-500/50 focus:outline-none focus:border-teal-400 font-mono"
+              />
+              <p className="text-[10px] text-white/25 mt-1 px-1">Enter to create · Esc to cancel</p>
+            </div>
+          )}
+
+          {/* File list */}
+          <div className="flex-1 overflow-y-auto py-1">
+            {files.map(file => (
+              <div
+                key={file.id}
+                onClick={() => setActiveId(file.id)}
+                className={`flex items-center gap-1.5 pl-3 pr-2 py-1.5 cursor-pointer group transition-colors ${
+                  activeId === file.id
+                    ? 'bg-teal-500/20 text-white border-l-2 border-l-teal-400'
+                    : 'text-white/55 hover:bg-white/5 hover:text-white/80 border-l-2 border-l-transparent'
+                }`}
+              >
+                <ChevronRight size={9} className="text-white/15 flex-shrink-0" />
+                {getFileIcon(file.name)}
+                <span className="flex-1 text-xs font-mono truncate">{file.name}</span>
+                {files.length > 1 && (
+                  <button
+                    onClick={e => { e.stopPropagation(); deleteFile(file.id) }}
+                    className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-red-500/30 text-white/30 hover:text-red-400 transition-all flex-shrink-0"
+                    title="Delete file"
+                  >
+                    <Trash2 size={10} />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Task subtasks panel */}
+          {(task.subtasks ?? []).length > 0 && (
+            <div className="border-t border-white/10 px-3 py-3 flex-shrink-0">
+              <p className="text-[10px] font-bold text-white/30 uppercase tracking-wider mb-2">Task Steps</p>
+              <div className="space-y-1.5">
+                {task.subtasks!.map((s, i) => (
+                  <div key={s.id} className="flex items-start gap-1.5">
+                    <span className="text-[10px] text-teal-500/60 font-bold mt-0.5 flex-shrink-0">{i + 1}.</span>
+                    <span className="text-[10px] text-white/40 leading-relaxed">{s.title}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Editor + console (right) ─────────────────────────────────────── */}
+        <div className="flex-1 flex flex-col min-w-0">
+
+          {/* Tab bar */}
+          <div className="flex items-center bg-[#12121f] border-b border-white/10 overflow-x-auto flex-shrink-0 scrollbar-none">
+            {files.map(file => (
+              <button
+                key={file.id}
+                onClick={() => setActiveId(file.id)}
+                className={`flex items-center gap-1.5 px-4 py-2 text-xs font-mono whitespace-nowrap border-r border-white/10 transition-colors flex-shrink-0 ${
+                  activeId === file.id
+                    ? 'bg-[#1e1e2e] text-white border-t-2 border-t-teal-400 -mb-px pt-[calc(0.5rem-2px)]'
+                    : 'text-white/40 hover:text-white/70 hover:bg-[#1e1e2e]/50 border-t-2 border-t-transparent'
+                }`}
+              >
+                {getFileIcon(file.name)}
+                {file.name}
+              </button>
+            ))}
+          </div>
+
+          {/* Monaco editor */}
+          <div className="flex-1 min-h-0">
+            {activeFile ? (
+              <Editor
+                height="100%"
+                language={activeFile.language}
+                value={activeFile.content}
+                onChange={updateContent}
+                theme="vs-dark"
+                options={{
+                  fontSize:                   13,
+                  fontFamily:                 "'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace",
+                  fontLigatures:              true,
+                  minimap:                    { enabled: false },
+                  scrollBeyondLastLine:       false,
+                  lineNumbersMinChars:        3,
+                  padding:                    { top: 16, bottom: 16 },
+                  smoothScrolling:            true,
+                  cursorSmoothCaretAnimation: 'on',
+                  wordWrap:                   'on',
+                  renderLineHighlight:        'line',
+                  bracketPairColorization:    { enabled: true },
+                  formatOnPaste:              true,
+                  tabSize:                    2,
+                  automaticLayout:            true,
+                  scrollbar: {
+                    verticalScrollbarSize:   6,
+                    horizontalScrollbarSize: 6,
+                  },
+                }}
+              />
+            ) : (
+              <div className="h-full flex items-center justify-center">
+                <p className="text-white/20 text-sm">Select a file to edit</p>
+              </div>
+            )}
+          </div>
+
+          {/* Console output */}
+          {showConsole && (
+            <div className="h-40 bg-[#0f0f1a] border-t border-white/10 flex flex-col flex-shrink-0">
+              <div className="flex items-center justify-between px-3 py-1.5 border-b border-white/10 flex-shrink-0">
+                <div className="flex items-center gap-1.5">
+                  <Terminal size={10} className="text-white/30" />
+                  <span className="text-[10px] font-bold text-white/35 uppercase tracking-wider">Console Output</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <button onClick={clearOutput} className="text-[10px] text-white/25 hover:text-white/50 transition-colors">Clear</button>
+                  <button onClick={() => setShowConsole(false)} className="text-white/25 hover:text-white/50 transition-colors">
+                    <X size={11} />
+                  </button>
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto px-3 py-2.5">
+                {output ? (
+                  <pre className="text-xs font-mono text-green-400 whitespace-pre-wrap leading-relaxed">{output}</pre>
+                ) : (
+                  <p className="text-xs text-white/20 font-mono italic">
+                    {running ? 'Running…' : 'Click ▶ Run to execute your JavaScript file'}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}

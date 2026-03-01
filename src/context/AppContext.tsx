@@ -44,6 +44,33 @@ export interface TaskFeedback {
   visibility: FeedbackVisibility[]  // who can see this feedback
 }
 
+// ─── Playground persisted state (saved per task per user) ─────────────────────
+export interface PlaygroundCodeFile {
+  id: string; name: string; language: string; content: string
+}
+export interface PlaygroundMailAttachment {
+  name: string; size: string; ext: string
+}
+export interface PlaygroundMailMessage {
+  id: string; from: string; fromEmail: string; to: string; toEmail: string
+  subject: string; body: string; timestamp: string
+  attachments: PlaygroundMailAttachment[]; direction: 'sent' | 'received'
+}
+export interface PlaygroundMailProspect {
+  name: string; email: string; company: string; role: string; initials: string; color: string
+}
+export interface PlaygroundMailThread {
+  id: string; subject: string; prospect: PlaygroundMailProspect
+  messages: PlaygroundMailMessage[]; lastAt: string; unread: boolean
+}
+export interface PlaygroundState {
+  codeFiles?: PlaygroundCodeFile[]
+  codeActiveId?: string
+  mailThreads?: PlaygroundMailThread[]
+  mailView?: 'inbox' | 'sent'
+  lastSaved?: string
+}
+
 export interface Task {
   id: string
   title: string
@@ -65,6 +92,8 @@ export interface Task {
   inputValue?: string
   feedback?: TaskFeedback[]   // feedback on completed tasks
   playgroundEnabled?: boolean  // mentor sandbox mode — new hire can try without affecting real progress
+  playgroundType?: 'engineering' | 'marketing' | 'leadership' | 'sales' | 'hr-operations' | 'product-strategy'
+  playgroundState?: PlaygroundState  // persisted playground content per user
 }
 
 export interface Document {

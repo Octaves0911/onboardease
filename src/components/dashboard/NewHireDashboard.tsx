@@ -10,6 +10,8 @@ import { useApp, initialMentors } from '../../context/AppContext'
 import type { Task, Document } from '../../context/AppContext'
 import NewHireChatWidget from '../chat/NewHireChatWidget'
 import PDFViewerModal from '../modals/PDFViewerModal'
+import CodePlaygroundModal from '../modals/CodePlaygroundModal'
+import MailPlaygroundModal from '../modals/MailPlaygroundModal'
 
 interface Props {
   activeSection: string
@@ -39,14 +41,14 @@ function assignedByLabel(by: string, name: string) {
 // ── Inline Task Accordion ─────────────────────────────────────────────────────
 // Renders full task details below the row when expanded.
 
-function TaskAccordion({ task, onToggleStatus, onViewDoc }: {
+function TaskAccordion({ task, onToggleStatus, onViewDoc, onOpenPlayground }: {
   task: Task
   onToggleStatus: (taskId: string, currentStatus: string) => void
   onViewDoc: (doc: Document) => void
+  onOpenPlayground: (task: Task) => void
 }) {
   const { state, dispatch } = useApp()
-  const [expanded,       setExpanded]       = useState(false)
-  const [playgroundOpen, setPlaygroundOpen] = useState(false)
+  const [expanded, setExpanded] = useState(false)
 
   const doneSubs  = (task.subtasks ?? []).filter(s => s.status === 'done').length
   const totalSubs = (task.subtasks ?? []).length
@@ -253,23 +255,47 @@ function TaskAccordion({ task, onToggleStatus, onViewDoc }: {
           )}
 
           {/* Playground mode — open sandbox when enabled by mentor */}
-          {task.playgroundEnabled && (
-            <div className="bg-gradient-to-r from-teal-50 to-cyan-50 border border-teal-200 rounded-xl p-3.5 flex items-start gap-3">
-              <div className="w-8 h-8 rounded-lg bg-teal-100 border border-teal-200 flex items-center justify-center flex-shrink-0">
-                <FlaskConical size={15} className="text-teal-600" />
+          {task.playgroundEnabled && (() => {
+            const typeLabels: Record<string, { label: string; icon: string; desc: string }> = {
+              'engineering':       { label: 'Engineering',        icon: '💻', desc: 'Code editor sandbox — practice freely without affecting real progress.' },
+              'marketing':         { label: 'Marketing',          icon: '📣', desc: 'Marketing sandbox — practice freely without affecting real progress.' },
+              'leadership':        { label: 'Leadership',         icon: '👑', desc: 'Leadership sandbox — practice freely without affecting real progress.' },
+              'sales':             { label: 'Sales',              icon: '💰', desc: 'Sales sandbox — practice freely without affecting real progress.' },
+              'hr-operations':     { label: 'HR & Operations',    icon: '👥', desc: 'HR sandbox — practice freely without affecting real progress.' },
+              'product-strategy':  { label: 'Product & Strategy', icon: '🧭', desc: 'Product sandbox — practice freely without affecting real progress.' },
+            }
+            const pType = task.playgroundType ?? 'engineering'
+            const meta  = typeLabels[pType] ?? typeLabels['engineering']
+            const canOpen = pType === 'engineering' || pType === 'sales'
+
+            return (
+              <div className="bg-gradient-to-r from-teal-50 to-cyan-50 border border-teal-200 rounded-xl p-3.5 flex items-start gap-3">
+                <div className="w-8 h-8 rounded-lg bg-teal-100 border border-teal-200 flex items-center justify-center flex-shrink-0 text-base">
+                  {meta.icon}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-sm font-bold text-teal-800">Playground Active</p>
+                    <span className="text-[10px] font-bold bg-teal-600 text-white px-2 py-0.5 rounded-full">
+                      {meta.label}
+                    </span>
+                  </div>
+                  <p className="text-xs text-teal-600 mt-0.5">{meta.desc}</p>
+                </div>
+                <button
+                  onClick={e => { e.stopPropagation(); if (canOpen) onOpenPlayground(task) }}
+                  className={`flex items-center gap-1.5 text-xs font-bold text-white px-3 py-1.5 rounded-lg transition-colors flex-shrink-0 ${
+                    canOpen
+                      ? 'bg-teal-600 hover:bg-teal-700'
+                      : 'bg-teal-300 cursor-not-allowed'
+                  }`}
+                  title={canOpen ? `Open ${meta.label} playground` : 'Coming soon'}
+                >
+                  <FlaskConical size={12} /> Open
+                </button>
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-bold text-teal-800">Playground Active</p>
-                <p className="text-xs text-teal-600 mt-0.5">Your mentor enabled a sandbox for this task — practice freely without affecting your real progress.</p>
-              </div>
-              <button
-                onClick={e => { e.stopPropagation(); setPlaygroundOpen(true) }}
-                className="flex items-center gap-1.5 text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 px-3 py-1.5 rounded-lg transition-colors flex-shrink-0"
-              >
-                <FlaskConical size={12} /> Open
-              </button>
-            </div>
-          )}
+            )
+          })()}
 
           {/* Status action button */}
           <button
@@ -281,78 +307,6 @@ function TaskAccordion({ task, onToggleStatus, onViewDoc }: {
         </div>
       )}
 
-      {/* Playground overlay */}
-      {playgroundOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4" onClick={() => setPlaygroundOpen(false)}>
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
-          <div
-            className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden"
-            onClick={e => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div className="bg-gradient-to-r from-teal-600 to-cyan-600 px-5 py-4 flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center">
-                  <FlaskConical size={16} className="text-white" />
-                </div>
-                <div>
-                  <p className="text-sm font-bold text-white leading-none">Playground Mode</p>
-                  <p className="text-xs text-white/70 mt-0.5">Safe sandbox — no real progress affected</p>
-                </div>
-              </div>
-              <button onClick={() => setPlaygroundOpen(false)} className="p-1.5 rounded-lg hover:bg-white/20 text-white transition-colors">
-                <ChevronDown size={18} />
-              </button>
-            </div>
-
-            <div className="p-5 space-y-4">
-              {/* Task title */}
-              <div className="bg-teal-50 border border-teal-100 rounded-xl p-3.5">
-                <p className="text-xs font-semibold text-teal-600 uppercase tracking-wide mb-1">Task</p>
-                <p className="font-bold text-brown-900">{task.title}</p>
-                {task.description && <p className="text-sm text-brown-600 mt-1 leading-relaxed">{task.description}</p>}
-              </div>
-
-              {/* Sandbox subtasks */}
-              {totalSubs > 0 && (
-                <div>
-                  <p className="text-xs font-semibold text-brown-500 uppercase tracking-wide mb-2">Try these steps (sandbox)</p>
-                  <div className="space-y-1.5">
-                    {task.subtasks!.map((sub, i) => (
-                      <div key={sub.id} className="flex items-center gap-2.5 p-2.5 rounded-xl border border-brown-100 bg-brown-50">
-                        <div className="w-5 h-5 rounded-full border-2 border-brown-300 flex items-center justify-center flex-shrink-0 text-xs text-brown-400 font-bold">{i + 1}</div>
-                        <span className="text-sm text-brown-700">{sub.title}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Sandbox notes */}
-              <div>
-                <p className="text-xs font-semibold text-brown-500 uppercase tracking-wide mb-1.5">Your sandbox notes</p>
-                <textarea
-                  className="w-full border border-brown-200 rounded-xl p-3 text-sm text-brown-800 focus:outline-none focus:ring-2 focus:ring-teal-300 resize-none bg-brown-50"
-                  rows={3}
-                  placeholder="Jot down your practice notes here — they won't be saved to your real task…"
-                  onClick={e => e.stopPropagation()}
-                />
-              </div>
-
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setPlaygroundOpen(false)}
-                  className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-teal-600 hover:bg-teal-700 text-white transition-colors"
-                >Done Practicing</button>
-                <button
-                  onClick={() => { setPlaygroundOpen(false); onToggleStatus(task.id, task.status) }}
-                  className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-green-600 hover:bg-green-700 text-white transition-colors"
-                >Mark as Done</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
@@ -590,8 +544,9 @@ function OverviewSection({ employee, myTasks, mentor, onMessageMentor }: {
 
 function TasksSection({ myTasks }: { myTasks: Task[] }) {
   const { dispatch } = useApp()
-  const [activeTab,  setActiveTab]  = useState<'all' | 'pending' | 'in-progress' | 'done'>('all')
-  const [viewingDoc, setViewingDoc] = useState<Document | null>(null)
+  const [activeTab,      setActiveTab]      = useState<'all' | 'pending' | 'in-progress' | 'done'>('all')
+  const [viewingDoc,     setViewingDoc]     = useState<Document | null>(null)
+  const [playgroundTask, setPlaygroundTask] = useState<Task | null>(null)
 
   const toggleTaskStatus = (taskId: string, currentStatus: string) => {
     const next = currentStatus === 'done' ? 'pending' : currentStatus === 'pending' ? 'in-progress' : 'done'
@@ -640,6 +595,7 @@ function TasksSection({ myTasks }: { myTasks: Task[] }) {
                 task={task}
                 onToggleStatus={toggleTaskStatus}
                 onViewDoc={setViewingDoc}
+                onOpenPlayground={setPlaygroundTask}
               />
             ))}
           </div>
@@ -649,6 +605,30 @@ function TasksSection({ myTasks }: { myTasks: Task[] }) {
 
       {/* PDF/Doc viewer triggered from task supporting docs */}
       {viewingDoc && <PDFViewerModal doc={viewingDoc} onClose={() => setViewingDoc(null)} />}
+
+      {/* Code Playground — Engineering type */}
+      {playgroundTask && (playgroundTask.playgroundType ?? 'engineering') === 'engineering' && (
+        <CodePlaygroundModal
+          task={playgroundTask}
+          onClose={() => setPlaygroundTask(null)}
+          onMarkDone={() => {
+            toggleTaskStatus(playgroundTask.id, playgroundTask.status)
+            setPlaygroundTask(null)
+          }}
+        />
+      )}
+
+      {/* Mail Playground — Sales type */}
+      {playgroundTask && playgroundTask.playgroundType === 'sales' && (
+        <MailPlaygroundModal
+          task={playgroundTask}
+          onClose={() => setPlaygroundTask(null)}
+          onMarkDone={() => {
+            toggleTaskStatus(playgroundTask.id, playgroundTask.status)
+            setPlaygroundTask(null)
+          }}
+        />
+      )}
     </div>
   )
 }

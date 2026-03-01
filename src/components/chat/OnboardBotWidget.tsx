@@ -21,10 +21,30 @@ function useCurrentIdentity() {
 // ─── Suggestion chips per role ────────────────────────────────────────────────
 
 const SUGGESTIONS: Record<string, string[]> = {
-  employee: ['What are my pending tasks?', 'Who is my mentor?', 'Tell me about the company', 'How am I doing?'],
-  mentor:   ['Show my mentees progress', 'What tasks have I assigned?', 'Tell me about the company', 'Any at-risk mentees?'],
-  hr:       ['Show all employees status', 'Who are the mentors?', 'Task completion summary', 'Any at-risk employees?'],
-  admin:    ['Show onboarding overview', 'List all documents', 'Who are the mentors?', 'Tell me about the company'],
+  employee: [
+    'What are my pending tasks?',
+    'When is my next meeting?',
+    'Who is my buddy/mentor?',
+    'How do I set up MFA?',
+  ],
+  mentor: [
+    "Show my mentees' progress",
+    'Who is at risk?',
+    'What tasks are assigned to my mentees?',
+    'How do I schedule a meeting?',
+  ],
+  hr: [
+    'How many employees are onboarding?',
+    'Which employees are at risk?',
+    'Generate tasks from a document',
+    'What documents are uploaded?',
+  ],
+  admin: [
+    'Give me a full onboarding overview',
+    'Any at-risk employees?',
+    'What documents are uploaded?',
+    'Show overall progress metrics',
+  ],
 }
 
 // ─── Main widget ──────────────────────────────────────────────────────────────
@@ -54,12 +74,19 @@ export default function OnboardBotWidget() {
       setHasGreeted(true)
       const name = role === 'admin' ? 'Admin'
         : role === 'hr' ? 'HR Manager'
-        : state.employees?.find(e => e.id === userId)?.name?.split(' ')[0]
-        ?? state.mentors?.find(m => m.id === userId)?.name?.split(' ')[0]
+        : state.employees?.find((e: any) => e.id === userId)?.name?.split(' ')[0]
+        ?? state.mentors?.find((m: any) => m.id === userId)?.name?.split(' ')[0]
         ?? 'there'
+      const contextHint = role === 'employee'
+        ? 'your tasks, meetings, mentor info, and company policies'
+        : role === 'mentor'
+        ? "your assigned mentees' progress, tasks, and meetings"
+        : role === 'hr'
+        ? 'all employees, mentors, tasks, and uploaded documents'
+        : 'all onboarding data — employees, mentors, tasks, analytics, and documents'
       setHistory([{
         role: 'bot',
-        content: `Hi ${name}! 👋 I'm OnboardBot — your onboarding assistant. I have full context about your ${role === 'employee' ? 'tasks and mentor' : role === 'mentor' ? 'mentees and assigned tasks' : 'team and onboarding data'}. What would you like to know?`,
+        content: `Hi ${name}! 👋 I'm OnboardBot — your AI onboarding assistant.\n\nI have full context about ${contextHint}. I can also answer general questions outside of onboarding.\n\nWhat can I help you with today?`,
       }])
     }
     if (open) setTimeout(() => inputRef.current?.focus(), 100)

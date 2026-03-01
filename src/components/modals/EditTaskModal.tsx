@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react'
-import { X, Plus, Trash2, CheckCircle, Link2, FileText, AlertCircle, Upload, Save } from 'lucide-react'
+import { X, Plus, Trash2, CheckCircle, Link2, FileText, AlertCircle, Upload, Save, FlaskConical } from 'lucide-react'
 import { useApp } from '../../context/AppContext'
 import type { Task, SubTask, SupportingLink, Document } from '../../context/AppContext'
 
@@ -31,8 +31,11 @@ export default function EditTaskModal({ task, uploaderId, onClose }: Props) {
   const [supportingLinks,  setSupportingLinks]  = useState<SupportingLink[]>(task.supportingLinks ?? [])
   const [newLinkLabel,   setNewLinkLabel]   = useState('')
   const [newLinkUrl,     setNewLinkUrl]     = useState('')
-  const [requiresInput,  setRequiresInput]  = useState(task.requiresInput ?? false)
-  const [inputPrompt,    setInputPrompt]    = useState(task.inputPrompt ?? '')
+  const [requiresInput,    setRequiresInput]    = useState(task.requiresInput ?? false)
+  const [inputPrompt,      setInputPrompt]      = useState(task.inputPrompt ?? '')
+  // Playground — only relevant for mentor-assigned tasks
+  const [playgroundEnabled, setPlaygroundEnabled] = useState(task.playgroundEnabled ?? false)
+  const [playgroundType,    setPlaygroundType]    = useState<NonNullable<Task['playgroundType']>>(task.playgroundType ?? 'engineering')
   const [fieldErrors,    setFieldErrors]    = useState<{ title?: string; description?: string; inputPrompt?: string }>({})
   const [formError,      setFormError]      = useState('')
   const docUploadRef = useRef<HTMLInputElement>(null)
@@ -106,16 +109,20 @@ export default function EditTaskModal({ task, uploaderId, onClose }: Props) {
       payload: {
         id: task.id,
         updates: {
-          title:           title.trim(),
-          description:     description.trim(),
+          title:            title.trim(),
+          description:      description.trim(),
           category,
-          estimatedTime:   estimatedTime.trim() || '30 min',
+          estimatedTime:    estimatedTime.trim() || '30 min',
           priority,
           subtasks,
-          supportingDocs:  supportingDocIds,
+          supportingDocs:   supportingDocIds,
           supportingLinks,
           requiresInput,
-          inputPrompt:     requiresInput ? inputPrompt.trim() : undefined,
+          inputPrompt:      requiresInput ? inputPrompt.trim() : undefined,
+          ...(task.assignedBy === 'mentor' && {
+            playgroundEnabled,
+            playgroundType: playgroundEnabled ? playgroundType : undefined,
+          }),
         },
       },
     })
@@ -303,6 +310,57 @@ export default function EditTaskModal({ task, uploaderId, onClose }: Props) {
               </div>
             )}
           </div>
+
+          {/* Playground — mentor tasks only */}
+          {task.assignedBy === 'mentor' && (
+            <div className={`border rounded-xl p-4 transition-colors ${playgroundEnabled ? 'bg-teal-50 border-teal-200' : 'bg-brown-50 border-brown-200'}`}>
+              <div className="flex items-center gap-3">
+                <div
+                  onClick={() => setPlaygroundEnabled(v => !v)}
+                  className={`w-10 h-6 rounded-full transition-colors flex-shrink-0 relative cursor-pointer ${playgroundEnabled ? 'bg-teal-500' : 'bg-brown-200'}`}
+                >
+                  <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${playgroundEnabled ? 'translate-x-5' : 'translate-x-1'}`} />
+                </div>
+                <FlaskConical size={15} className={playgroundEnabled ? 'text-teal-600' : 'text-brown-400'} />
+                <div>
+                  <p className="text-sm font-semibold text-brown-800">Enable Playground</p>
+                  <p className="text-xs text-brown-500">Let the employee practice in a sandbox without affecting real progress</p>
+                </div>
+              </div>
+
+              {playgroundEnabled && (
+                <div className="mt-3 pt-3 border-t border-teal-200">
+                  <p className="text-xs font-semibold text-teal-700 mb-2">Playground Type</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { value: 'engineering', label: 'Engineering', icon: '💻', enabled: true  },
+                      { value: 'sales',       label: 'Sales',       icon: '💰', enabled: true  },
+                      { value: 'marketing',   label: 'Marketing',   icon: '📣', enabled: false },
+                      { value: 'leadership',  label: 'Leadership',  icon: '👑', enabled: false },
+                    ].map(opt => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        disabled={!opt.enabled}
+                        onClick={() => opt.enabled && setPlaygroundType(opt.value as NonNullable<Task['playgroundType']>)}
+                        className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium transition-all ${
+                          !opt.enabled
+                            ? 'opacity-40 cursor-not-allowed bg-white border-brown-200 text-brown-400'
+                            : playgroundType === opt.value
+                            ? 'bg-teal-600 border-teal-600 text-white shadow-sm'
+                            : 'bg-white border-teal-200 text-teal-700 hover:bg-teal-50'
+                        }`}
+                      >
+                        <span>{opt.icon}</span>
+                        <span>{opt.label}</span>
+                        {!opt.enabled && <span className="ml-auto text-[9px] text-brown-400 flex-shrink-0">Soon</span>}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {formError && (
             <div className="flex items-center gap-2 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">

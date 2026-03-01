@@ -19,11 +19,12 @@ interface Props {
   day: number
 }
 
+// Spec-aligned suggestion chips for employees
 const QUICK_PROMPTS = [
   'What are my pending tasks?',
-  'Who is my mentor and how do I reach them?',
-  'How am I doing so far?',
-  'What should I prioritize this week?',
+  'When is my next meeting?',
+  'Who is my buddy/mentor?',
+  'How do I set up MFA?',
 ]
 
 function timestamp() {
@@ -53,13 +54,16 @@ export default function NewHireChatWidget({ employeeName, tasksDone, tasksTotal,
 
     const userMsg: Message = { id: `u-${Date.now()}`, role: 'user', content: msg, ts: timestamp() }
     setMessages(prev => [...prev, userMsg])
+
+    // Capture history BEFORE adding user message so isFirst context injection works correctly
+    const prevHistory = [...botHistory.current]
     botHistory.current = [...botHistory.current, { role: 'user', content: msg }]
     setLoading(true)
 
     try {
       const userId = state.currentUserId ?? 'emp-1'
       const context = buildOnboardBotContext(state, userId, 'employee')
-      const reply = await sendOnboardBotMessage(msg, context, botHistory.current, chatIdRef)
+      const reply = await sendOnboardBotMessage(msg, context, prevHistory, chatIdRef)
       botHistory.current = [...botHistory.current, { role: 'bot', content: reply }]
       setMessages(prev => [...prev, { id: `a-${Date.now()}`, role: 'ai', content: reply, ts: timestamp() }])
     } catch {
@@ -77,8 +81,8 @@ export default function NewHireChatWidget({ employeeName, tasksDone, tasksTotal,
             <Bot size={15} className="text-white" />
           </div>
           <div>
-            <p className="text-sm font-bold text-white leading-none">AI Onboarding Assistant</p>
-            <p className="text-xs text-white/60 mt-0.5">Here to help you succeed</p>
+            <p className="text-sm font-bold text-white leading-none">OnboardBot</p>
+            <p className="text-xs text-white/60 mt-0.5">Your AI Onboarding Assistant</p>
           </div>
         </div>
         <div className="flex items-center gap-1">
@@ -102,7 +106,7 @@ export default function NewHireChatWidget({ employeeName, tasksDone, tasksTotal,
               </div>
               <div className="bg-teal-50 border border-teal-100 rounded-2xl rounded-tl-sm px-3 py-2.5 max-w-[85%]">
                 <p className="text-xs text-teal-800 leading-relaxed">
-                  Hi {employeeName.split(' ')[0]}! I'm your AI assistant. I can help with <strong>onboarding tips</strong>, <strong>best practices</strong>, and any <strong>questions about your first 30 days</strong>. What's on your mind?
+                  Hi {employeeName.split(' ')[0]}! 👋 I'm <strong>OnboardBot</strong> — I have full context about your tasks, meetings, and mentor. I can also answer general questions. What's on your mind?
                 </p>
               </div>
             </div>
@@ -113,7 +117,7 @@ export default function NewHireChatWidget({ employeeName, tasksDone, tasksTotal,
               {QUICK_PROMPTS.map(p => (
                 <button
                   key={p}
-                  onClick={() => { setInput(p); inputRef.current?.focus() }}
+                  onClick={() => send(p)}
                   className="w-full text-left text-xs text-brown-600 bg-brown-50 hover:bg-brown-100 border border-brown-100 px-3 py-2 rounded-xl transition-colors leading-relaxed"
                 >
                   {p}

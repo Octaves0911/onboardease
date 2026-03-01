@@ -40,6 +40,7 @@ interface ManualForm {
   requiresInput: boolean
   inputPrompt: string
   playgroundEnabled: boolean
+  playgroundType: 'engineering' | 'marketing' | 'leadership' | 'sales' | 'hr-operations' | 'product-strategy'
 }
 
 function emptyForm(): ManualForm {
@@ -47,7 +48,7 @@ function emptyForm(): ManualForm {
     title: '', description: '', category: 'General', estimatedTime: '30 min',
     priority: 'medium', subtasks: [], supportingDocIds: [],
     supportingLinks: [], requiresInput: false, inputPrompt: '',
-    playgroundEnabled: false,
+    playgroundEnabled: false, playgroundType: 'engineering',
   }
 }
 
@@ -94,7 +95,8 @@ export default function CreateTaskModal({ employee, onClose, assignedBy = 'admin
   }
 
   // ── AI playground state (for AI mode — mirrors manual form's flag) ──
-  const [aiPlayground, setAiPlayground] = useState(false)
+  const [aiPlayground,     setAiPlayground]     = useState(false)
+  const [aiPlaygroundType, setAiPlaygroundType] = useState<'engineering' | 'marketing' | 'leadership' | 'sales' | 'hr-operations' | 'product-strategy'>('engineering')
 
   // ── AI chat state ──
   const [chatInput,      setChatInput]      = useState('')
@@ -165,6 +167,7 @@ export default function CreateTaskModal({ employee, onClose, assignedBy = 'admin
       requiresInput: form.requiresInput,
       inputPrompt: form.requiresInput ? form.inputPrompt.trim() : undefined,
       playgroundEnabled: assignedBy === 'mentor' ? form.playgroundEnabled : undefined,
+      playgroundType:    assignedBy === 'mentor' && form.playgroundEnabled ? form.playgroundType : undefined,
     }
     dispatch({ type: 'ADD_TASK', payload: task })
     onClose()
@@ -249,6 +252,7 @@ export default function CreateTaskModal({ employee, onClose, assignedBy = 'admin
       requiresInput: s.requiresInput,
       inputPrompt: s.requiresInput ? s.inputPrompt : undefined,
       playgroundEnabled: assignedBy === 'mentor' ? aiPlayground : undefined,
+      playgroundType:    assignedBy === 'mentor' && aiPlayground ? aiPlaygroundType : undefined,
     }
     dispatch({ type: 'ADD_TASK', payload: task })
   }
@@ -471,7 +475,7 @@ export default function CreateTaskModal({ employee, onClose, assignedBy = 'admin
                 )}
               </div>
 
-              {/* Playground toggle — mentor only */}
+              {/* Playground toggle + type selector — mentor only */}
               {assignedBy === 'mentor' && (
                 <div className={`border rounded-xl p-4 transition-colors ${form.playgroundEnabled ? 'bg-teal-50 border-teal-200' : 'bg-brown-50 border-brown-200'}`}>
                   <label className="flex items-center gap-3 cursor-pointer">
@@ -489,6 +493,41 @@ export default function CreateTaskModal({ employee, onClose, assignedBy = 'admin
                       </div>
                     </div>
                   </label>
+
+                  {/* Playground type selector — shown when enabled */}
+                  {form.playgroundEnabled && (
+                    <div className="mt-3 pt-3 border-t border-teal-200">
+                      <p className="text-xs font-semibold text-teal-700 mb-2">Playground Type</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {[
+                          { value: 'engineering',       label: 'Engineering',        icon: '💻', enabled: true  },
+                          { value: 'sales',             label: 'Sales',              icon: '💰', enabled: true  },
+                          { value: 'marketing',         label: 'Marketing',          icon: '📣', enabled: false },
+                          { value: 'leadership',        label: 'Leadership',         icon: '👑', enabled: false },
+                          { value: 'hr-operations',     label: 'HR & Operations',    icon: '👥', enabled: false },
+                          { value: 'product-strategy',  label: 'Product & Strategy', icon: '🧭', enabled: false },
+                        ].map(opt => (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            disabled={!opt.enabled}
+                            onClick={() => opt.enabled && setForm(f => ({ ...f, playgroundType: opt.value as NonNullable<Task['playgroundType']> }))}
+                            className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium transition-all ${
+                              !opt.enabled
+                                ? 'opacity-40 cursor-not-allowed bg-white border-brown-200 text-brown-400'
+                                : form.playgroundType === opt.value
+                                ? 'bg-teal-600 border-teal-600 text-white shadow-sm'
+                                : 'bg-white border-teal-200 text-teal-700 hover:bg-teal-50'
+                            }`}
+                          >
+                            <span>{opt.icon}</span>
+                            <span className="truncate">{opt.label}</span>
+                            {!opt.enabled && <span className="ml-auto text-[9px] text-brown-400 flex-shrink-0">Soon</span>}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -505,19 +544,55 @@ export default function CreateTaskModal({ employee, onClose, assignedBy = 'admin
           {mode === 'ai' && (
             <div className="flex flex-col h-full" style={{ minHeight: 0 }}>
 
-              {/* ── Playground toggle for AI mode — mentor only ── */}
+              {/* ── Playground toggle + type selector for AI mode — mentor only ── */}
               {assignedBy === 'mentor' && (
-                <div className={`px-4 pt-3 pb-2 border-b flex items-center gap-3 flex-shrink-0 transition-colors ${aiPlayground ? 'bg-teal-50 border-teal-200' : 'bg-brown-50/60 border-brown-100'}`}>
-                  <div
-                    onClick={() => setAiPlayground(v => !v)}
-                    className={`w-9 h-5 rounded-full transition-colors flex-shrink-0 relative cursor-pointer ${aiPlayground ? 'bg-teal-500' : 'bg-brown-300'}`}
-                  >
-                    <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${aiPlayground ? 'translate-x-[calc(100%-0.25rem)]' : 'translate-x-0.5'}`} />
+                <div className={`px-4 pt-3 pb-3 border-b flex-shrink-0 transition-colors ${aiPlayground ? 'bg-teal-50 border-teal-200' : 'bg-brown-50/60 border-brown-100'}`}>
+                  <div className="flex items-center gap-3">
+                    <div
+                      onClick={() => setAiPlayground(v => !v)}
+                      className={`w-9 h-5 rounded-full transition-colors flex-shrink-0 relative cursor-pointer ${aiPlayground ? 'bg-teal-500' : 'bg-brown-300'}`}
+                    >
+                      <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${aiPlayground ? 'translate-x-[calc(100%-0.25rem)]' : 'translate-x-0.5'}`} />
+                    </div>
+                    <FlaskConical size={13} className={aiPlayground ? 'text-teal-600' : 'text-brown-400'} />
+                    <span className={`text-xs font-semibold ${aiPlayground ? 'text-teal-700' : 'text-brown-500'}`}>
+                      Playground {aiPlayground ? 'enabled' : 'disabled'} — assigned tasks won't affect official progress
+                    </span>
                   </div>
-                  <FlaskConical size={13} className={aiPlayground ? 'text-teal-600' : 'text-brown-400'} />
-                  <span className={`text-xs font-semibold ${aiPlayground ? 'text-teal-700' : 'text-brown-500'}`}>
-                    Playground {aiPlayground ? 'enabled' : 'disabled'} — assigned tasks won't affect official progress
-                  </span>
+
+                  {/* Type selector — shown when playground is enabled */}
+                  {aiPlayground && (
+                    <div className="mt-2.5 pt-2.5 border-t border-teal-200">
+                      <p className="text-[10px] font-semibold text-teal-700 mb-1.5">Playground Type</p>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {[
+                          { value: 'engineering',       label: 'Engineering',        icon: '💻', enabled: true  },
+                          { value: 'sales',             label: 'Sales',              icon: '💰', enabled: true  },
+                          { value: 'marketing',         label: 'Marketing',          icon: '📣', enabled: false },
+                          { value: 'leadership',        label: 'Leadership',         icon: '👑', enabled: false },
+                          { value: 'hr-operations',     label: 'HR & Ops',           icon: '👥', enabled: false },
+                          { value: 'product-strategy',  label: 'Product',            icon: '🧭', enabled: false },
+                        ].map(opt => (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            disabled={!opt.enabled}
+                            onClick={() => opt.enabled && setAiPlaygroundType(opt.value as NonNullable<Task['playgroundType']>)}
+                            className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg border text-[10px] font-medium transition-all ${
+                              !opt.enabled
+                                ? 'opacity-40 cursor-not-allowed bg-white border-brown-200 text-brown-400'
+                                : aiPlaygroundType === opt.value
+                                ? 'bg-teal-600 border-teal-600 text-white'
+                                : 'bg-white border-teal-200 text-teal-700 hover:bg-teal-50'
+                            }`}
+                          >
+                            <span>{opt.icon}</span>
+                            <span className="truncate">{opt.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 

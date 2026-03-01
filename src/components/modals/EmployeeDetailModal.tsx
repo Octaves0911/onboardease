@@ -3,12 +3,14 @@ import { useState as useLocalState } from 'react'
 import {
   X, Mail, Users, Calendar, TrendingUp, CheckCircle, Clock,
   AlertCircle, FileText, Trash2, Plus, ChevronDown, ChevronUp,
-  Link2, ArrowUp, ArrowDown, GripVertical, MessageSquare, Eye, Send, Edit3
+  Link2, ArrowUp, ArrowDown, GripVertical, MessageSquare, Eye, Send, Edit3,
+  FlaskConical,
 } from 'lucide-react'
 import { useApp, initialMentors } from '../../context/AppContext'
 import type { Employee, Task, TaskFeedback, FeedbackVisibility } from '../../context/AppContext'
 import CreateTaskModal from './CreateTaskModal'
 import EditTaskModal from './EditTaskModal'
+import PlaygroundActivityModal from './PlaygroundActivityModal'
 
 interface Props {
   employee: Employee
@@ -37,11 +39,12 @@ const ROLE_LABELS: Record<FeedbackVisibility, string> = { admin: '🔑 Admin', h
 
 export default function EmployeeDetailModal({ employee, onClose }: Props) {
   const { state, dispatch } = useApp()
-  const [showConfirm,       setShowConfirm]       = useState(false)
-  const [showCreateTask,    setShowCreateTask]    = useState(false)
-  const [editingTask,       setEditingTask]       = useState<Task | null>(null)
-  const [expandedTask,      setExpandedTask]      = useState<Record<string, boolean>>({})
-  const [confirmRemoveTask, setConfirmRemoveTask] = useState<string | null>(null)
+  const [showConfirm,          setShowConfirm]          = useState(false)
+  const [showCreateTask,       setShowCreateTask]       = useState(false)
+  const [editingTask,          setEditingTask]          = useState<Task | null>(null)
+  const [expandedTask,         setExpandedTask]         = useState<Record<string, boolean>>({})
+  const [confirmRemoveTask,    setConfirmRemoveTask]    = useState<string | null>(null)
+  const [viewingPlayground,    setViewingPlayground]    = useState<Task | null>(null)
   // Feedback state per task
   const [feedbackOpen,      setFeedbackOpen]      = useState<Record<string, boolean>>({})
   const [feedbackText,      setFeedbackText]      = useState<Record<string, string>>({})
@@ -333,6 +336,17 @@ export default function EmployeeDetailModal({ employee, onClose }: Props) {
                           </button>
                         )}
 
+                        {/* View Playground Activity — only for playground tasks with saved state */}
+                        {task.playgroundEnabled && task.playgroundState?.lastSaved && (
+                          <button
+                            onClick={() => setViewingPlayground(task)}
+                            title="View playground activity"
+                            className="p-1 rounded flex-shrink-0 text-teal-400 hover:text-teal-700 hover:bg-teal-50 transition-colors"
+                          >
+                            <FlaskConical size={13} />
+                          </button>
+                        )}
+
                         {/* Edit button — only visible to task creator */}
                         {canEditTask(task) && (
                           <button
@@ -546,6 +560,14 @@ export default function EmployeeDetailModal({ employee, onClose }: Props) {
 
     {editingTask && (
       <EditTaskModal task={editingTask} uploaderId={uploaderId} onClose={() => setEditingTask(null)} />
+    )}
+
+    {viewingPlayground && (
+      <PlaygroundActivityModal
+        task={viewingPlayground}
+        employeeName={employee.name}
+        onClose={() => setViewingPlayground(null)}
+      />
     )}
     </>
   )
