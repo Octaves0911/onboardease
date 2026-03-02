@@ -404,8 +404,8 @@ export default function EmployeeDetailModal({ employee, onClose }: Props) {
                               </div>
                             ))}
 
-                          {/* Add feedback form */}
-                          {feedbackOpen[task.id] ? (
+                          {/* Add feedback form — only the task creator can write feedback */}
+                          {canEditTask(task) && (feedbackOpen[task.id] ? (
                             <div className="space-y-2">
                               <textarea
                                 className="w-full text-xs border border-green-200 rounded-lg p-2 resize-none focus:outline-none focus:ring-1 focus:ring-green-400 bg-white"
@@ -447,7 +447,7 @@ export default function EmployeeDetailModal({ employee, onClose }: Props) {
                             >
                               <MessageSquare size={11} /> Add Feedback
                             </button>
-                          )}
+                          ))}
                         </div>
                       )}
 
