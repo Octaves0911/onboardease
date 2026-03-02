@@ -120,6 +120,42 @@ ${(task.subtasks ?? []).map(s => `- [ ] ${s.title}`).join('\n') || '- [ ] Comple
 3.
 `,
       },
+      {
+        id: '5', name: 'main.py', language: 'python',
+        content: `# ── ${task.title} — Python Sandbox ─────────────────────
+# Run with ▶ Run button. Executes remotely via Piston API.
+
+def greet(name: str) -> str:
+    return f"👋 Hello, {name}! Welcome to the Python sandbox."
+
+# Try it out
+print(greet("New Hire"))
+
+# ── Your practice code below ────────────────────────────
+# TODO: Experiment with Python concepts here!
+`,
+      },
+      {
+        id: '6', name: 'main.cpp', language: 'cpp',
+        content: `// ── ${task.title} — C++ Sandbox ──────────────────────────
+// Run with ▶ Run button. Compiled & executed remotely via Piston API.
+
+#include <iostream>
+#include <string>
+using namespace std;
+
+string greet(const string& name) {
+    return "Hello, " + name + "! Welcome to the C++ sandbox.";
+}
+
+int main() {
+    cout << greet("New Hire") << endl;
+
+    // TODO: Experiment with C++ concepts here!
+    return 0;
+}
+`,
+      },
     ]
   }
 
@@ -235,6 +271,8 @@ function getFileIcon(name: string) {
   if (ext === 'html')                      return <FileCode size={13} className="text-orange-400 flex-shrink-0" />
   if (ext === 'md')                        return <FileText size={13} className="text-green-400 flex-shrink-0" />
   if (ext === 'json')                      return <FileText size={13} className="text-amber-400 flex-shrink-0" />
+  if (ext === 'py')                        return <FileCode size={13} className="text-blue-300 flex-shrink-0" />
+  if (ext === 'cpp' || ext === 'c')        return <FileCode size={13} className="text-purple-400 flex-shrink-0" />
   return <File size={13} className="text-white/40 flex-shrink-0" />
 }
 
@@ -246,7 +284,41 @@ function langFromName(name: string): string {
   if (ext === 'html') return 'html'
   if (ext === 'md')   return 'markdown'
   if (ext === 'json') return 'json'
+  if (ext === 'py')   return 'python'
+  if (ext === 'cpp')  return 'cpp'
+  if (ext === 'c')    return 'c'
   return 'plaintext'
+}
+
+// ─── Piston API executor (Python, C++) ────────────────────────────────────────
+
+interface TerminalLine { text: string; type: 'cmd' | 'stdout' | 'stderr' | 'info' }
+
+async function runWithPiston(language: string, filename: string, code: string): Promise<TerminalLine[]> {
+  const pistonLang = language === 'cpp' || language === 'c' ? 'c++' : 'python'
+  const cmd = language === 'python' ? `python ${filename}` : `./${filename.replace(/\.cpp$/, '')}`
+  const lines: TerminalLine[] = [{ text: `$ ${cmd}`, type: 'cmd' }]
+  try {
+    const res = await fetch('https://emkc.org/api/v2/piston/execute', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        language: pistonLang,
+        version: '*',
+        files: [{ name: filename, content: code }],
+      }),
+    })
+    if (!res.ok) throw new Error(`Piston API error: ${res.status}`)
+    const data = await res.json()
+    const stdout = data?.run?.stdout?.trim()
+    const stderr = data?.run?.stderr?.trim()
+    if (stdout) stdout.split('\n').forEach((l: string) => lines.push({ text: l, type: 'stdout' }))
+    if (stderr) stderr.split('\n').forEach((l: string) => lines.push({ text: l, type: 'stderr' }))
+    if (!stdout && !stderr) lines.push({ text: '✓ Exited with code 0 — no output', type: 'info' })
+  } catch (err: any) {
+    lines.push({ text: `✗ ${err.message}`, type: 'stderr' })
+  }
+  return lines
 }
 
 // Safe JS sandbox using Function constructor
@@ -319,13 +391,14 @@ export default function CodePlaygroundModal({ task, onClose, onMarkDone }: Props
   const savedState   = task.playgroundState
   const initialFiles = savedState?.codeFiles?.length ? (savedState.codeFiles as FileNode[]) : getInitialFiles(task)
 
-  const [files,       setFiles]       = useState<FileNode[]>(initialFiles)
-  const [activeId,    setActiveId]    = useState<string>(savedState?.codeActiveId ?? initialFiles[0]?.id ?? '')
-  const [output,      setOutput]      = useState<string>('')
-  const [showConsole, setShowConsole] = useState(false)
-  const [newFileName, setNewFileName] = useState('')
-  const [showNewFile, setShowNewFile] = useState(false)
-  const [running,     setRunning]     = useState(false)
+  const [files,         setFiles]         = useState<FileNode[]>(initialFiles)
+  const [activeId,      setActiveId]      = useState<string>(savedState?.codeActiveId ?? initialFiles[0]?.id ?? '')
+  const [output,        setOutput]        = useState<string>('')
+  const [terminalLines, setTerminalLines] = useState<TerminalLine[]>([])
+  const [showConsole,   setShowConsole]   = useState(false)
+  const [newFileName,   setNewFileName]   = useState('')
+  const [showNewFile,   setShowNewFile]   = useState(false)
+  const [running,       setRunning]       = useState(false)
 
   // ── AI panel draggable width ──────────────────────────────────────────────
   const [aiPanelWidth,   setAiPanelWidth]   = useState(320)
@@ -441,16 +514,34 @@ export default function CodePlaygroundModal({ task, onClose, onMarkDone }: Props
     if (!activeFile) return
     setRunning(true)
     setShowConsole(true)
-    await new Promise(r => setTimeout(r, 150))
-    if (activeFile.language === 'javascript' || activeFile.language === 'typescript') {
-      setOutput(runJavaScript(activeFile.content))
+    setTerminalLines([])
+    setOutput('')
+    await new Promise(r => setTimeout(r, 80))
+
+    const lang = activeFile.language
+    if (lang === 'javascript' || lang === 'typescript') {
+      // JS: sandboxed in-browser execution
+      const result = runJavaScript(activeFile.content)
+      const cmd = lang === 'typescript' ? `ts-node ${activeFile.name}` : `node ${activeFile.name}`
+      setTerminalLines([
+        { text: `$ ${cmd}`, type: 'cmd' },
+        ...result.split('\n').map(l => ({ text: l, type: 'stdout' as const })),
+      ])
+    } else if (lang === 'python' || lang === 'cpp' || lang === 'c') {
+      // Python / C++: remote execution via Piston API
+      setTerminalLines([{ text: `$ Sending to remote executor…`, type: 'info' }])
+      const lines = await runWithPiston(lang, activeFile.name, activeFile.content)
+      setTerminalLines(lines)
     } else {
-      setOutput(`ℹ️  Run is available for JavaScript/TypeScript files.\nCurrent file: ${activeFile.name} (${activeFile.language})\n\nTip: Create a .js file to execute code.`)
+      setTerminalLines([{
+        text: `ℹ️  Run supports JavaScript, TypeScript, Python (.py) and C++ (.cpp).\nCurrent file: ${activeFile.name} (${lang})`,
+        type: 'info',
+      }])
     }
     setRunning(false)
   }
 
-  const clearOutput = () => setOutput('')
+  const clearOutput = () => { setOutput(''); setTerminalLines([]) }
 
   // ── Send message to AI assistant ──────────────────────────────────────────
   const sendAiMessage = async (text?: string) => {
@@ -700,28 +791,55 @@ export default function CodePlaygroundModal({ task, onClose, onMarkDone }: Props
             )}
           </div>
 
-          {/* Console output */}
+          {/* Terminal */}
           {showConsole && (
-            <div className="h-40 bg-[#0f0f1a] border-t border-white/10 flex flex-col flex-shrink-0">
-              <div className="flex items-center justify-between px-3 py-1.5 border-b border-white/10 flex-shrink-0">
-                <div className="flex items-center gap-1.5">
-                  <Terminal size={10} className="text-white/30" />
-                  <span className="text-[10px] font-bold text-white/35 uppercase tracking-wider">Console Output</span>
+            <div className="h-52 bg-[#0c0c14] border-t border-white/10 flex flex-col flex-shrink-0">
+              {/* Title bar with traffic-light dots */}
+              <div className="flex items-center justify-between px-3 py-1.5 border-b border-white/8 bg-[#111120] flex-shrink-0">
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-full bg-red-500/70" />
+                    <span className="w-2.5 h-2.5 rounded-full bg-yellow-500/70" />
+                    <span className="w-2.5 h-2.5 rounded-full bg-green-500/70" />
+                  </div>
+                  <div className="flex items-center gap-1.5 ml-2">
+                    <Terminal size={10} className="text-white/30" />
+                    <span className="text-[10px] font-semibold text-white/30 tracking-wide">bash — {activeFile?.name ?? 'terminal'}</span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <button onClick={clearOutput} className="text-[10px] text-white/25 hover:text-white/50 transition-colors">Clear</button>
-                  <button onClick={() => setShowConsole(false)} className="text-white/25 hover:text-white/50 transition-colors">
+                <div className="flex items-center gap-2">
+                  {running && <Loader2 size={10} className="text-green-400 animate-spin" />}
+                  <button onClick={clearOutput} className="text-[10px] text-white/20 hover:text-white/50 transition-colors font-mono">clear</button>
+                  <button onClick={() => setShowConsole(false)} className="text-white/20 hover:text-white/50 transition-colors">
                     <X size={11} />
                   </button>
                 </div>
               </div>
-              <div className="flex-1 overflow-y-auto px-3 py-2.5">
-                {output ? (
-                  <pre className="text-xs font-mono text-green-400 whitespace-pre-wrap leading-relaxed">{output}</pre>
-                ) : (
-                  <p className="text-xs text-white/20 font-mono italic">
-                    {running ? 'Running…' : 'Click ▶ Run to execute your JavaScript file'}
+
+              {/* Terminal body */}
+              <div className="flex-1 overflow-y-auto px-3 py-2 font-mono text-xs leading-relaxed">
+                {terminalLines.length === 0 && !running ? (
+                  <p className="text-white/15 italic">
+                    Press <span className="text-green-500/60 not-italic">▶ Run</span> to execute — supports JS, Python and C++
                   </p>
+                ) : (
+                  <div className="space-y-0.5">
+                    {terminalLines.map((line, i) => (
+                      <div key={i} className={
+                        line.type === 'cmd'    ? 'text-green-400 font-semibold' :
+                        line.type === 'stderr' ? 'text-red-400' :
+                        line.type === 'info'   ? 'text-white/40 italic' :
+                        'text-gray-200'
+                      }>
+                        {line.text}
+                      </div>
+                    ))}
+                    {running && (
+                      <div className="flex items-center gap-1.5 text-green-400/60">
+                        <span className="animate-pulse">▋</span>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
