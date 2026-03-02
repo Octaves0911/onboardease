@@ -47,6 +47,13 @@ function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
+function getDaysUntil(dateStr: string) {
+  const diff = Math.ceil((new Date(dateStr + 'T00:00:00').getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
+  if (diff === 0) return 'Today'
+  if (diff === 1) return 'Tomorrow'
+  return `In ${diff}d`
+}
+
 // ─── ResumeAIChat ─────────────────────────────────────────────────────────────
 
 function ResumeAIChat({
@@ -428,12 +435,14 @@ function OverviewSection({
   onDetailClick,
   onScheduleClick,
   onCreateTaskClick,
+  meetings,
 }: {
   myMentees: Employee[]
   currentMentor: typeof initialMentors[0]
   onDetailClick: (m: Employee) => void
   onScheduleClick: (m: Employee) => void
   onCreateTaskClick: (m: Employee) => void
+  meetings: Meeting[]
 }) {
   const { state, dispatch } = useApp()
   const docInputRef = useRef<HTMLInputElement>(null)
@@ -579,6 +588,54 @@ function OverviewSection({
                 </div>
               )}
             </div>
+          </div>
+
+          {/* Upcoming Meetings */}
+          <div className="card">
+            <h3 className="font-bold text-brown-900 mb-3 text-sm flex items-center gap-2">
+              <Calendar size={14} className="text-teal-600" /> Upcoming Meetings
+            </h3>
+            {(() => {
+              const today = new Date().toISOString().split('T')[0]
+              const upcoming = [...meetings]
+                .filter(m => m.date >= today)
+                .sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time))
+                .slice(0, 3)
+              if (upcoming.length === 0) return (
+                <div className="text-center py-4 text-brown-400">
+                  <Calendar size={24} className="mx-auto mb-1.5 opacity-30" />
+                  <p className="text-xs">No meetings scheduled</p>
+                </div>
+              )
+              return (
+                <div className="space-y-2">
+                  {upcoming.map(meet => {
+                    const mentee = myMentees.find(e => e.id === meet.menteeId)
+                    return (
+                      <div key={meet.id} className="flex items-start gap-2.5 p-2.5 rounded-xl border border-teal-100 bg-teal-50/40">
+                        <div className="flex-shrink-0 text-center bg-teal-100 rounded-lg px-1.5 py-1 min-w-[38px]">
+                          <p className="text-[9px] font-bold text-teal-600 uppercase leading-none">
+                            {new Date(meet.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short' })}
+                          </p>
+                          <p className="text-base font-black text-teal-900 leading-tight">
+                            {new Date(meet.date + 'T00:00:00').getDate()}
+                          </p>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold text-brown-800 truncate">{meet.title}</p>
+                          {mentee && <p className="text-[10px] text-brown-500 truncate">{mentee.name}</p>}
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <Clock size={9} className="text-brown-400" />
+                            <span className="text-xs text-brown-400">{meet.time}</span>
+                            <span className="text-xs font-semibold text-teal-600">· {getDaysUntil(meet.date)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            })()}
           </div>
 
           {/* My Documents */}
@@ -1226,6 +1283,7 @@ export default function MentorDashboard({
           <OverviewSection
             myMentees={myMentees}
             currentMentor={currentMentor}
+            meetings={meetings}
             onDetailClick={m => setSelectedEmployee(m)}
             onScheduleClick={m => { setScheduleMentee(m); setShowSchedModal(true) }}
             onCreateTaskClick={m => setCreateTaskMentee(m)}

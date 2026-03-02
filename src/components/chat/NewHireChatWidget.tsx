@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Bot, Send, Loader2, User, Sparkles, X } from 'lucide-react'
 import { useApp } from '../../context/AppContext'
 import { buildOnboardBotContext, sendOnboardBotMessage, type OnboardBotMessage } from '../../services/aiService'
+import MarkdownRenderer from '../common/MarkdownRenderer'
 
 interface Message {
   id: string
@@ -61,7 +62,7 @@ export default function NewHireChatWidget({ employeeName, tasksDone, tasksTotal,
     setLoading(true)
 
     try {
-      const userId = state.currentUserId ?? 'emp-1'
+      const userId = state.currentUserId ?? state.employees[0]?.id ?? ''
       const context = buildOnboardBotContext(state, userId, 'employee')
       const reply = await sendOnboardBotMessage(msg, context, prevHistory, chatIdRef)
       botHistory.current = [...botHistory.current, { role: 'bot', content: reply }]
@@ -145,9 +146,9 @@ export default function NewHireChatWidget({ employeeName, tasksDone, tasksTotal,
                       ? 'bg-teal-700 text-white rounded-tr-sm'
                       : 'bg-teal-50 border border-teal-100 text-teal-900 rounded-tl-sm'
                   }`}>
-                    {m.content.split('\n').map((line, i) => (
-                      <span key={i}>{line}{i < m.content.split('\n').length - 1 && <br />}</span>
-                    ))}
+                    {m.role === 'ai'
+                      ? <MarkdownRenderer content={m.content} theme="light" />
+                      : m.content}
                   </div>
                   <span className="text-xs text-brown-300 mt-0.5 px-1">{m.ts}</span>
                 </div>
