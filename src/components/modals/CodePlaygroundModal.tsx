@@ -10,6 +10,7 @@ import type { Task } from '../../context/AppContext'
 import { generateCodeAssistantReply } from '../../services/aiService'
 import type { CodeAssistantMessage } from '../../services/aiService'
 import MarkdownRenderer from '../common/MarkdownRenderer'
+import XTerminal, { type XTerminalHandle } from '../common/XTerminal'
 
 // ─── File node ────────────────────────────────────────────────────────────────
 
@@ -318,9 +319,7 @@ function langFromName(name: string): string {
 
 // ─── Terminal config ──────────────────────────────────────────────────────────
 
-interface TerminalLine { text: string; type: 'stdout' | 'stderr' | 'info' }
-
-const TERMINAL_WS_URL = 'wss://b9957ste.run.complete.dev/ws/terminal'
+const PTY_WS_URL = 'wss://b9957ste.run.complete.dev/ws/pty'
 
 // Safe JS sandbox using Function constructor
 function runJavaScript(code: string): string {
@@ -396,65 +395,14 @@ export default function CodePlaygroundModal({ task, onClose, onMarkDone }: Props
 
   const [files,         setFiles]         = useState<FileNode[]>(initialFiles)
   const [activeId,      setActiveId]      = useState<string>(savedState?.codeActiveId ?? initialFiles[0]?.id ?? '')
-  const [output,        setOutput]        = useState<string>('')
-  const [terminalLines, setTerminalLines] = useState<TerminalLine[]>([])
-  const [termInput,     setTermInput]     = useState<string>('')
   const [showConsole,   setShowConsole]   = useState(false)
   const [newFileName,   setNewFileName]   = useState('')
   const [newItemType,   setNewItemType]   = useState<'file' | 'folder'>('file')
   const [newItemParent, setNewItemParent] = useState<string | null>(null)
   const [showNewFile,   setShowNewFile]   = useState(false)
-  const [running,       setRunning]       = useState(false)
-  const [wsConnected,   setWsConnected]   = useState(false)
 
-  // WebSocket ref for the bash terminal
-  const wsRef      = useRef<WebSocket | null>(null)
-  const termEndRef = useRef<HTMLDivElement>(null)
-
-  // Auto-scroll terminal to bottom
-  useEffect(() => { termEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [terminalLines])
-
-  // Open persistent WebSocket to backend terminal
-  useEffect(() => {
-    const connect = () => {
-      const ws = new WebSocket(TERMINAL_WS_URL)
-      ws.onopen  = () => setWsConnected(true)
-      ws.onclose = () => { setWsConnected(false); setTimeout(connect, 3000) }
-      ws.onerror = () => ws.close()
-      ws.onmessage = (evt) => {
-        const msg = JSON.parse(evt.data)
-        if (msg.type === 'stdout' || msg.type === 'stderr') {
-          const lineType: TerminalLine['type'] = msg.type
-          const chunks = msg.data.split('\n')
-          setTerminalLines(prev => {
-            const last = prev[prev.length - 1]
-            // Append to last incomplete line or push new lines
-            const result = [...prev]
-            chunks.forEach((chunk: string, i: number) => {
-              if (i === 0 && last && !last.text.endsWith('\n')) {
-                result[result.length - 1] = { ...last, text: last.text + chunk }
-              } else if (chunk !== '') {
-                result.push({ text: chunk, type: lineType })
-              }
-            })
-            return result
-          })
-        } else if (msg.type === 'done') {
-          setTerminalLines(prev => [
-            ...prev,
-            { text: `[exited with code ${msg.code}]`, type: 'info' }
-          ])
-          setRunning(false)
-        } else if (msg.type === 'error') {
-          setTerminalLines(prev => [...prev, { text: `✗ ${msg.data}`, type: 'stderr' }])
-          setRunning(false)
-        }
-      }
-      wsRef.current = ws
-    }
-    connect()
-    return () => { wsRef.current?.close() }
-  }, [])
+  // Ref to the xterm.js terminal handle (runCommand / syncFiles)
+  const xtermRef = useRef<XTerminalHandle>(null)
 
   // ── AI panel draggable width ──────────────────────────────────────────────
   const [aiPanelWidth,   setAiPanelWidth]   = useState(320)
@@ -588,62 +536,25 @@ export default function CodePlaygroundModal({ task, onClose, onMarkDone }: Props
     if (lang === 'javascript')  return `node ${path}`
     if (lang === 'typescript')  return `npx ts-node ${path}`
     if (lang === 'python')      return `python3 ${path}`
-    if (lang === 'cpp')         return `g++ -o /tmp/prog ${path} && /tmp/prog`
-    if (lang === 'c')           return `gcc -o /tmp/prog ${path} && /tmp/prog`
+    if (lang === 'cpp')         return `g++ -std=c++17 -o /tmp/playground_prog ${path} && /tmp/playground_prog`
+    if (lang === 'c')           return `gcc -o /tmp/playground_prog ${path} && /tmp/playground_prog`
     return null
   }
 
-  // Send command + all current files to the backend WebSocket
-  const sendCommand = (cmd: string) => {
-    const ws = wsRef.current
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
-      setTerminalLines(prev => [...prev, { text: '✗ Terminal not connected — retrying…', type: 'stderr' }])
-      return
-    }
-    const filePayload = files
-      .filter(f => f.type === 'file')
-      .map(f => ({ path: getFilePath(f, files), content: f.content }))
-
-    ws.send(JSON.stringify({ type: 'execute', files: filePayload, command: cmd }))
-  }
+  const filePayload = () =>
+    files.filter(f => f.type === 'file').map(f => ({ path: getFilePath(f, files), content: f.content }))
 
   const runCode = () => {
     if (!activeFile || activeFile.type === 'folder') return
     const cmd = buildCommand(activeFile)
-    if (!cmd) {
-      setShowConsole(true)
-      setTerminalLines([{ text: `ℹ️  No runner for ${activeFile.name} (${activeFile.language})`, type: 'info' }])
-      return
-    }
-
-    const lang = activeFile.language
-    if (lang === 'javascript' || lang === 'typescript') {
-      // JS stays sandboxed in-browser for instant feedback
-      const result = runJavaScript(activeFile.content)
-      setShowConsole(true)
-      setTerminalLines([
-        { text: result, type: 'stdout' },
-        { text: '[exited with code 0]', type: 'info' },
-      ])
-      return
-    }
-
-    setRunning(true)
     setShowConsole(true)
-    setTerminalLines([])
-    sendCommand(cmd)
+    if (!cmd) return
+    xtermRef.current?.runCommand(cmd, filePayload())
   }
 
-  const clearOutput = () => { setOutput(''); setTerminalLines([]) }
-
-  const handleTerminalInput = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key !== 'Enter') return
-    const cmd = termInput.trim()
-    if (!cmd) return
-    setTerminalLines(prev => [...prev, { text: `$ ${cmd}`, type: 'info' }])
-    setRunning(true)
-    sendCommand(cmd)
-    setTermInput('')
+  const clearTerminal = () => {
+    // Send Ctrl+L to bash to clear the screen
+    xtermRef.current?.runCommand('clear', filePayload())
   }
 
   // ── Send message to AI assistant ──────────────────────────────────────────
@@ -705,11 +616,9 @@ export default function CodePlaygroundModal({ task, onClose, onMarkDone }: Props
           {/* Run */}
           <button
             onClick={runCode}
-            disabled={running}
-            className="flex items-center gap-1.5 text-xs font-bold bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg transition-colors"
+            className="flex items-center gap-1.5 text-xs font-bold bg-green-600 hover:bg-green-500 text-white px-3 py-1.5 rounded-lg transition-colors"
           >
-            {running ? <RefreshCw size={11} className="animate-spin" /> : <Play size={11} />}
-            {running ? 'Running…' : 'Run'}
+            <Play size={11} /> Run
           </button>
 
           {/* Console toggle */}
@@ -940,63 +849,31 @@ export default function CodePlaygroundModal({ task, onClose, onMarkDone }: Props
             )}
           </div>
 
-          {/* Terminal */}
+          {/* xterm.js Terminal */}
           {showConsole && (
-            <div className="h-56 bg-[#0c0c14] border-t border-white/10 flex flex-col flex-shrink-0">
+            <div className="h-64 bg-[#0c0c14] border-t border-white/10 flex flex-col flex-shrink-0">
               {/* Title bar */}
-              <div className="flex items-center justify-between px-3 py-1.5 border-b border-white/8 bg-[#111120] flex-shrink-0">
+              <div className="flex items-center justify-between px-3 py-1 border-b border-white/8 bg-[#111120] flex-shrink-0">
                 <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-red-500/70" />
-                    <span className="w-2.5 h-2.5 rounded-full bg-yellow-500/70" />
-                    <span className="w-2.5 h-2.5 rounded-full bg-green-500/70" />
-                  </div>
+                  <span className="w-2.5 h-2.5 rounded-full bg-red-500/70 cursor-pointer" onClick={() => setShowConsole(false)} />
+                  <span className="w-2.5 h-2.5 rounded-full bg-yellow-500/70" />
+                  <span className="w-2.5 h-2.5 rounded-full bg-green-500/70" />
                   <div className="flex items-center gap-1.5 ml-2">
                     <Terminal size={10} className="text-white/30" />
-                    <span className="text-[10px] font-semibold text-white/30 tracking-wide">bash</span>
-                    <span className={`ml-1 w-1.5 h-1.5 rounded-full ${wsConnected ? 'bg-green-500' : 'bg-red-500'}`} title={wsConnected ? 'Connected' : 'Reconnecting…'} />
+                    <span className="text-[10px] font-semibold text-white/25 tracking-wide">bash — playground</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  {running && <Loader2 size={10} className="text-green-400 animate-spin" />}
-                  <button onClick={clearOutput} className="text-[10px] text-white/20 hover:text-white/50 transition-colors font-mono">clear</button>
+                  <button onClick={clearTerminal} className="text-[10px] text-white/20 hover:text-white/50 font-mono transition-colors">clear</button>
                   <button onClick={() => setShowConsole(false)} className="text-white/20 hover:text-white/50 transition-colors"><X size={11} /></button>
                 </div>
               </div>
-
-              {/* Output area */}
-              <div className="flex-1 overflow-y-auto px-3 py-2 font-mono text-xs leading-relaxed">
-                {terminalLines.length === 0 && !running ? (
-                  <p className="text-white/15 italic">
-                    Press <span className="text-green-500/60 not-italic font-semibold">▶ Run</span> to execute, or type a command below
-                  </p>
-                ) : (
-                  <div className="space-y-0.5">
-                    {terminalLines.map((line, i) => (
-                      <div key={i} className={
-                        line.type === 'stderr' ? 'text-red-400 whitespace-pre-wrap' :
-                        line.type === 'info'   ? 'text-white/35 italic' :
-                        'text-gray-200 whitespace-pre-wrap'
-                      }>
-                        {line.text}
-                      </div>
-                    ))}
-                    {running && <span className="text-green-400/50 animate-pulse">▋</span>}
-                    <div ref={termEndRef} />
-                  </div>
-                )}
-              </div>
-
-              {/* Command input */}
-              <div className="border-t border-white/8 px-3 py-1.5 flex items-center gap-2 bg-[#0f0f1c] flex-shrink-0">
-                <span className="text-green-500 font-mono text-xs select-none">$</span>
-                <input
-                  value={termInput}
-                  onChange={e => setTermInput(e.target.value)}
-                  onKeyDown={handleTerminalInput}
-                  placeholder="python3 main.py  ·  g++ main.cpp -o app && ./app  ·  ls …"
-                  disabled={running}
-                  className="flex-1 bg-transparent text-xs font-mono text-white placeholder-white/15 focus:outline-none disabled:opacity-40"
+              {/* xterm.js fills the rest */}
+              <div className="flex-1 min-h-0 overflow-hidden">
+                <XTerminal
+                  ref={xtermRef}
+                  wsUrl={PTY_WS_URL}
+                  initFiles={filePayload()}
                 />
               </div>
             </div>
