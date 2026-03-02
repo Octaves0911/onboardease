@@ -6,8 +6,31 @@ import {
 } from 'lucide-react'
 import { useApp } from '../../context/AppContext'
 import type { Employee, Task, SubTask, SupportingLink, Document } from '../../context/AppContext'
-import { sendTaskChatMessage, resetTaskChat } from '../../services/aiService'
-import type { SuggestedTask, TaskChatMessage } from '../../services/aiService'
+import type { SuggestedTask } from '../../services/aiService'
+
+// ─── Backend agent URL ────────────────────────────────────────────────────────
+const AGENT_API_URL = 'https://b9957ste.run.complete.dev'
+
+// ─── Local types ──────────────────────────────────────────────────────────────
+interface TaskChatMessage {
+  role: 'user' | 'agent'
+  content: string
+  tasks?: SuggestedTask[]
+}
+
+/** Map a backend Task object to SuggestedTask shape used in the UI pool */
+const backendTaskToSuggested = (t: any): SuggestedTask => ({
+  title:         t.title        ?? '',
+  description:   t.description  ?? '',
+  category:      t.category     ?? 'General',
+  estimatedTime: t.estimatedTime ?? '30 min',
+  priority:      t.priority     ?? 'medium',
+  subtasks: (t.subtasks ?? []).map((st: any) => ({
+    title: typeof st === 'string' ? st : (st.title ?? ''),
+  })),
+  requiresInput: t.requiresInput ?? false,
+  inputPrompt:   t.inputPrompt   ?? '',
+})
 
 interface Props {
   employee: Employee
@@ -19,6 +42,11 @@ interface Props {
 }
 
 const CATEGORIES = ['Setup', 'Learning', 'Technical', 'Compliance', 'People', 'Tools', 'Admin', 'General']
+const EST_TIMES = [
+  '15 min', '30 min', '45 min',
+  '1 hour', '1.5 hours', '2 hours', '3 hours', '4 hours',
+  'Half day', 'Full day', '2 days', '3 days', '1 week',
+]
 const PRIORITIES: { value: Task['priority']; label: string; color: string }[] = [
   { value: 'high',   label: 'High',   color: 'text-red-600 bg-red-50 border-red-200'    },
   { value: 'medium', label: 'Medium', color: 'text-orange-600 bg-orange-50 border-orange-200' },
@@ -173,10 +201,12 @@ export default function CreateTaskModal({ employee, onClose, assignedBy = 'admin
     onClose()
   }
 
-  // ── Reset agent session whenever this modal opens for a new employee ──
+  // ── Reset chat state whenever the modal opens for a new employee ──
   useEffect(() => {
-    resetTaskChat()
-    return () => { resetTaskChat() }   // also clean up on close
+    setChatHistory([])
+    setTaskPool([])
+    setChatError('')
+    setChatInput('')
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [employee.id])
 
@@ -204,12 +234,71 @@ export default function CreateTaskModal({ employee, onClose, assignedBy = 'admin
     setChatHistory(prev => [...prev, userMsg])
     setChatLoading(true)
     try {
-      const reply = await sendTaskChatMessage(msg, employee.name, employee.role, buildDocContext())
+      let agentContent: string
+      let newTasks: SuggestedTask[] = []
+
+      if (taskPool.length === 0) {
+        // ── First message → generate fresh tasks ──────────────────────────────
+        const res = await fetch(`${AGENT_API_URL}/api/generate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            person_info: {
+              id:            employee.id,
+              name:          employee.name,
+              role:          employee.role,
+              team:          employee.team,
+              email:         employee.email ?? '',
+              startDate:     employee.startDate ?? '',
+              resumeContent: employee.resumeContent ?? '',
+              bio:           employee.bio ?? '',
+            },
+            prompt:           msg,
+            assigned_by:      assignedBy,
+            assigned_by_name: assignedByName,
+          }),
+        })
+        if (!res.ok) throw new Error(`Server error: ${res.status}`)
+        const data = await res.json()
+        newTasks = (data.tasks ?? []).map(backendTaskToSuggested)
+        agentContent = data.message
+          || `I've generated ${newTasks.length} task${newTasks.length !== 1 ? 's' : ''} for ${employee.name}. Review them below — use the chat to refine any time!`
+      } else {
+        // ── Follow-up message → refine current task pool ──────────────────────
+        const res = await fetch(`${AGENT_API_URL}/api/refine`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            current_tasks:    taskPool,
+            instruction:      msg,
+            person_info: {
+              id:        employee.id,
+              name:      employee.name,
+              role:      employee.role,
+              team:      employee.team,
+              email:     employee.email ?? '',
+              startDate: employee.startDate ?? '',
+            },
+            assigned_by:      assignedBy,
+            assigned_by_name: assignedByName,
+          }),
+        })
+        if (!res.ok) throw new Error(`Server error: ${res.status}`)
+        const data = await res.json()
+        newTasks = (data.tasks ?? []).map(backendTaskToSuggested)
+        agentContent = data.message
+          ?? (data.changes_summary ? `Changes applied: ${data.changes_summary}` : `Updated to ${newTasks.length} task${newTasks.length !== 1 ? 's' : ''}.`)
+      }
+
+      const reply: TaskChatMessage = {
+        role: 'agent',
+        content: agentContent,
+        tasks: newTasks.length > 0 ? newTasks : undefined,
+      }
       setChatHistory(prev => [...prev, reply])
-      if (reply.tasks && reply.tasks.length > 0) {
-        // Merge new tasks into pool (replace all — agent's latest suggestion is authoritative)
-        setTaskPool(reply.tasks)
-        setExpandedTask(Object.fromEntries(reply.tasks.map((_, i) => [i, false])))
+      if (newTasks.length > 0) {
+        setTaskPool(newTasks)
+        setExpandedTask(Object.fromEntries(newTasks.map((_, i) => [i, false])))
       }
     } catch {
       setChatError('Agent failed to respond. Please try again.')
@@ -218,7 +307,6 @@ export default function CreateTaskModal({ employee, onClose, assignedBy = 'admin
   }
 
   const clearChat = () => {
-    resetTaskChat()
     setChatHistory([])
     setTaskPool([])
     setChatError('')
@@ -356,7 +444,9 @@ export default function CreateTaskModal({ employee, onClose, assignedBy = 'admin
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-brown-600 mb-1.5">Est. Time</label>
-                  <input type="text" value={form.estimatedTime} onChange={e => setForm(f => ({ ...f, estimatedTime: e.target.value }))} placeholder="30 min" className="input-field text-sm py-2.5" />
+                  <select value={form.estimatedTime} onChange={e => setForm(f => ({ ...f, estimatedTime: e.target.value }))} className="input-field text-sm py-2.5">
+                    {EST_TIMES.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-brown-600 mb-1.5">Priority</label>
@@ -686,41 +776,44 @@ export default function CreateTaskModal({ employee, onClose, assignedBy = 'admin
                   </div>
                   <div className="space-y-1.5">
                     {taskPool.map((s, i) => (
-                      <div key={i} className="flex items-center gap-2 border border-brown-100 rounded-xl px-3 py-2 bg-brown-50/40">
-                        <div className="flex flex-col gap-0.5 flex-shrink-0">
-                          <button onClick={() => moveSuggestion(i, 'up')} disabled={i === 0} className="p-0.5 text-brown-300 hover:text-brown-600 disabled:opacity-20"><ArrowUp size={11} /></button>
-                          <button onClick={() => moveSuggestion(i, 'down')} disabled={i === taskPool.length - 1} className="p-0.5 text-brown-300 hover:text-brown-600 disabled:opacity-20"><ArrowDown size={11} /></button>
-                        </div>
-                        <GripVertical size={12} className="text-brown-200 flex-shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="text-xs font-bold text-brown-400">#{i + 1}</span>
-                            <p className="text-xs font-semibold text-brown-800 truncate">{s.title}</p>
-                            {s.priority && <span className={`text-xs px-1.5 py-0.5 rounded-full border font-medium flex-shrink-0 ${PRIORITIES.find(p => p.value === s.priority)?.color ?? ''}`}>{s.priority}</span>}
-                            {s.requiresInput && <span className="text-xs px-1.5 py-0.5 rounded-full bg-purple-50 text-purple-600 border border-purple-100 flex-shrink-0 flex items-center gap-0.5"><AlertCircle size={9} />Input</span>}
+                      <div key={i}>
+                        {/* Task row */}
+                        <div className="flex items-center gap-2 border border-brown-100 rounded-xl px-3 py-2 bg-brown-50/40">
+                          <div className="flex flex-col gap-0.5 flex-shrink-0">
+                            <button onClick={() => moveSuggestion(i, 'up')} disabled={i === 0} className="p-0.5 text-brown-300 hover:text-brown-600 disabled:opacity-20"><ArrowUp size={11} /></button>
+                            <button onClick={() => moveSuggestion(i, 'down')} disabled={i === taskPool.length - 1} className="p-0.5 text-brown-300 hover:text-brown-600 disabled:opacity-20"><ArrowDown size={11} /></button>
                           </div>
-                          <p className="text-xs text-brown-400">{s.category} · {s.estimatedTime}{(s.subtasks?.length ?? 0) > 0 ? ` · ${s.subtasks!.length} subtasks` : ''}</p>
-                        </div>
-                        <button onClick={() => setExpandedTask(ex => ({ ...ex, [i]: !ex[i] }))} className="p-1 rounded text-brown-300 hover:text-brown-600 flex-shrink-0">
-                          {expandedTask[i] ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-                        </button>
-                        <button onClick={() => removeSuggestion(i)} className="p-1 rounded text-red-300 hover:text-red-600 hover:bg-red-50 flex-shrink-0"><Trash2 size={12} /></button>
-                        <button onClick={() => assignOneSuggestion(i)} className="btn-primary text-xs py-1 px-2.5 flex items-center gap-1 flex-shrink-0"><Plus size={11} />Assign</button>
-                      </div>
-                    ))}
-                    {/* Expanded subtask/input detail */}
-                    {taskPool.map((s, i) => expandedTask[i] && (
-                      <div key={`exp-${i}`} className="ml-10 mr-2 bg-white border border-brown-100 rounded-xl p-3 space-y-2">
-                        <p className="text-xs text-brown-600">{s.description}</p>
-                        {(s.subtasks?.length ?? 0) > 0 && (
-                          <div className="space-y-1">
-                            {s.subtasks!.map((st, j) => <div key={j} className="flex items-center gap-1.5 text-xs text-brown-500"><div className="w-2 h-2 rounded-full border-2 border-brown-300 flex-shrink-0" />{st.title}</div>)}
+                          <GripVertical size={12} className="text-brown-200 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-xs font-bold text-brown-400">#{i + 1}</span>
+                              <p className="text-xs font-semibold text-brown-800 truncate">{s.title}</p>
+                              {s.priority && <span className={`text-xs px-1.5 py-0.5 rounded-full border font-medium flex-shrink-0 ${PRIORITIES.find(p => p.value === s.priority)?.color ?? ''}`}>{s.priority}</span>}
+                              {s.requiresInput && <span className="text-xs px-1.5 py-0.5 rounded-full bg-purple-50 text-purple-600 border border-purple-100 flex-shrink-0 flex items-center gap-0.5"><AlertCircle size={9} />Input</span>}
+                            </div>
+                            <p className="text-xs text-brown-400">{s.category} · {s.estimatedTime}{(s.subtasks?.length ?? 0) > 0 ? ` · ${s.subtasks!.length} subtasks` : ''}</p>
                           </div>
-                        )}
-                        {s.requiresInput && s.inputPrompt && (
-                          <div className="bg-purple-50 border border-purple-100 rounded-lg px-2.5 py-1.5">
-                            <p className="text-xs font-semibold text-purple-700 flex items-center gap-1 mb-0.5"><AlertCircle size={10} />Input prompt</p>
-                            <p className="text-xs text-purple-600">{s.inputPrompt}</p>
+                          <button onClick={() => setExpandedTask(ex => ({ ...ex, [i]: !ex[i] }))} className="p-1 rounded text-brown-300 hover:text-brown-600 flex-shrink-0">
+                            {expandedTask[i] ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                          </button>
+                          <button onClick={() => removeSuggestion(i)} className="p-1 rounded text-red-300 hover:text-red-600 hover:bg-red-50 flex-shrink-0"><Trash2 size={12} /></button>
+                          <button onClick={() => assignOneSuggestion(i)} className="btn-primary text-xs py-1 px-2.5 flex items-center gap-1 flex-shrink-0"><Plus size={11} />Assign</button>
+                        </div>
+                        {/* Expanded subtask/input detail — rendered inline, directly below this task */}
+                        {expandedTask[i] && (
+                          <div className="ml-10 mr-2 mt-1 bg-white border border-brown-100 rounded-xl p-3 space-y-2">
+                            <p className="text-xs text-brown-600">{s.description}</p>
+                            {(s.subtasks?.length ?? 0) > 0 && (
+                              <div className="space-y-1">
+                                {s.subtasks!.map((st, j) => <div key={j} className="flex items-center gap-1.5 text-xs text-brown-500"><div className="w-2 h-2 rounded-full border-2 border-brown-300 flex-shrink-0" />{st.title}</div>)}
+                              </div>
+                            )}
+                            {s.requiresInput && s.inputPrompt && (
+                              <div className="bg-purple-50 border border-purple-100 rounded-lg px-2.5 py-1.5">
+                                <p className="text-xs font-semibold text-purple-700 flex items-center gap-1 mb-0.5"><AlertCircle size={10} />Input prompt</p>
+                                <p className="text-xs text-purple-600">{s.inputPrompt}</p>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
