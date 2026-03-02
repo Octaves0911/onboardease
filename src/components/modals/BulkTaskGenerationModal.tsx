@@ -9,7 +9,7 @@ import type { Employee, Task } from '../../context/AppContext'
 import type { SuggestedTask } from '../../services/aiService'
 
 // ─── Backend agent URL ────────────────────────────────────────────────────────
-const AGENT_API_URL = 'https://ei5attob.run.complete.dev'
+const AGENT_API_URL = 'https://b9957ste.run.complete.dev'
 
 /** Map a backend Task object to SuggestedTask shape used in the UI */
 const backendTaskToSuggested = (t: any): SuggestedTask => ({
