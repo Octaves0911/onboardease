@@ -9,9 +9,9 @@ import type { Employee, Task, SubTask, SupportingLink, Document } from '../../co
 import type { SuggestedTask } from '../../services/aiService'
 
 // ─── Backend agent URL ────────────────────────────────────────────────────────
-const AGENT_API_URL = 'https://b9957ste.run.complete.dev'
+const AGENT_API_URL = 'https://ddkdd063.run.complete.dev'
 
-// ─── Local types ──────────────────────────────────────────────────────────────
+// ─── Local types ────────────────────────────────────────────────────────────────
 interface TaskChatMessage {
   role: 'user' | 'agent'
   content: string
@@ -238,7 +238,7 @@ export default function CreateTaskModal({ employee, onClose, assignedBy = 'admin
       let newTasks: SuggestedTask[] = []
 
       if (taskPool.length === 0) {
-        // ── First message → generate fresh tasks ──────────────────────────────
+        // ── First message → generate fresh tasks ─────────────────────────────────────────
         const res = await fetch(`${AGENT_API_URL}/api/generate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -264,7 +264,7 @@ export default function CreateTaskModal({ employee, onClose, assignedBy = 'admin
         agentContent = data.message
           || `I've generated ${newTasks.length} task${newTasks.length !== 1 ? 's' : ''} for ${employee.name}. Review them below — use the chat to refine any time!`
       } else {
-        // ── Follow-up message → refine current task pool ──────────────────────
+        // ── Follow-up message → refine current task pool ──────────────────────────────────
         const res = await fetch(`${AGENT_API_URL}/api/refine`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -590,12 +590,12 @@ export default function CreateTaskModal({ employee, onClose, assignedBy = 'admin
                       <p className="text-xs font-semibold text-teal-700 mb-2">Playground Type</p>
                       <div className="grid grid-cols-2 gap-2">
                         {[
-                          { value: 'engineering',       label: 'Engineering',        icon: '💻', enabled: true  },
-                          { value: 'sales',             label: 'Sales',              icon: '💰', enabled: true  },
-                          { value: 'marketing',         label: 'Marketing',          icon: '📣', enabled: false },
-                          { value: 'leadership',        label: 'Leadership',         icon: '👑', enabled: false },
-                          { value: 'hr-operations',     label: 'HR & Operations',    icon: '👥', enabled: false },
-                          { value: 'product-strategy',  label: 'Product & Strategy', icon: '🧭', enabled: false },
+                          { value: 'engineering',       label: 'Engineering',        icon: '\uD83D\uDCBB', enabled: true  },
+                          { value: 'sales',             label: 'Sales',              icon: '\uD83D\uDCB0', enabled: true  },
+                          { value: 'marketing',         label: 'Marketing',          icon: '\uD83D\uDCE3', enabled: false },
+                          { value: 'leadership',        label: 'Leadership',         icon: '\uD83D\uDC51', enabled: false },
+                          { value: 'hr-operations',     label: 'HR & Operations',    icon: '\uD83D\uDC65', enabled: false },
+                          { value: 'product-strategy',  label: 'Product & Strategy', icon: '\uD83E\uDDED', enabled: false },
                         ].map(opt => (
                           <button
                             key={opt.value}
@@ -656,12 +656,12 @@ export default function CreateTaskModal({ employee, onClose, assignedBy = 'admin
                       <p className="text-[10px] font-semibold text-teal-700 mb-1.5">Playground Type</p>
                       <div className="grid grid-cols-3 gap-1.5">
                         {[
-                          { value: 'engineering',       label: 'Engineering',        icon: '💻', enabled: true  },
-                          { value: 'sales',             label: 'Sales',              icon: '💰', enabled: true  },
-                          { value: 'marketing',         label: 'Marketing',          icon: '📣', enabled: false },
-                          { value: 'leadership',        label: 'Leadership',         icon: '👑', enabled: false },
-                          { value: 'hr-operations',     label: 'HR & Ops',           icon: '👥', enabled: false },
-                          { value: 'product-strategy',  label: 'Product',            icon: '🧭', enabled: false },
+                          { value: 'engineering',       label: 'Engineering',        icon: '\uD83D\uDCBB', enabled: true  },
+                          { value: 'sales',             label: 'Sales',              icon: '\uD83D\uDCB0', enabled: true  },
+                          { value: 'marketing',         label: 'Marketing',          icon: '\uD83D\uDCE3', enabled: false },
+                          { value: 'leadership',        label: 'Leadership',         icon: '\uD83D\uDC51', enabled: false },
+                          { value: 'hr-operations',     label: 'HR & Ops',           icon: '\uD83D\uDC65', enabled: false },
+                          { value: 'product-strategy',  label: 'Product',            icon: '\uD83E\uDDED', enabled: false },
                         ].map(opt => (
                           <button
                             key={opt.value}
@@ -694,7 +694,7 @@ export default function CreateTaskModal({ employee, onClose, assignedBy = 'admin
                     {state.documents.map(doc => (
                       <label key={doc.id} className={`flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full border cursor-pointer transition-colors ${selectedDocIds.includes(doc.id) ? 'bg-brown-700 text-white border-brown-700' : 'bg-white text-brown-500 border-brown-200 hover:border-brown-400'}`}>
                         <input type="checkbox" checked={selectedDocIds.includes(doc.id)} onChange={() => toggleContextDoc(doc.id)} className="hidden" />
-                        {doc.name.slice(0, 18)}{doc.name.length > 18 ? '…' : ''}
+                        {doc.name.slice(0, 18)}{doc.name.length > 18 ? '\u2026' : ''}
                       </label>
                     ))}
                     {selectedDocIds.length === 0 && <span className="text-xs text-brown-400 italic">none selected — using general context</span>}
@@ -755,7 +755,7 @@ export default function CreateTaskModal({ employee, onClose, assignedBy = 'admin
                     </div>
                     <div className="bg-brown-50 border border-brown-100 rounded-2xl rounded-tl-sm px-3.5 py-2.5 flex items-center gap-1.5">
                       <Loader2 size={12} className="text-brown-400 animate-spin" />
-                      <span className="text-xs text-brown-400">Agent is thinking…</span>
+                      <span className="text-xs text-brown-400">Agent is thinking\u2026</span>
                     </div>
                   </div>
                 )}
@@ -791,7 +791,7 @@ export default function CreateTaskModal({ employee, onClose, assignedBy = 'admin
                               {s.priority && <span className={`text-xs px-1.5 py-0.5 rounded-full border font-medium flex-shrink-0 ${PRIORITIES.find(p => p.value === s.priority)?.color ?? ''}`}>{s.priority}</span>}
                               {s.requiresInput && <span className="text-xs px-1.5 py-0.5 rounded-full bg-purple-50 text-purple-600 border border-purple-100 flex-shrink-0 flex items-center gap-0.5"><AlertCircle size={9} />Input</span>}
                             </div>
-                            <p className="text-xs text-brown-400">{s.category} · {s.estimatedTime}{(s.subtasks?.length ?? 0) > 0 ? ` · ${s.subtasks!.length} subtasks` : ''}</p>
+                            <p className="text-xs text-brown-400">{s.category} \u00b7 {s.estimatedTime}{(s.subtasks?.length ?? 0) > 0 ? ` \u00b7 ${s.subtasks!.length} subtasks` : ''}</p>
                           </div>
                           <button onClick={() => setExpandedTask(ex => ({ ...ex, [i]: !ex[i] }))} className="p-1 rounded text-brown-300 hover:text-brown-600 flex-shrink-0">
                             {expandedTask[i] ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
@@ -840,7 +840,7 @@ export default function CreateTaskModal({ employee, onClose, assignedBy = 'admin
                   value={chatInput}
                   onChange={e => setChatInput(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendChat()}
-                  placeholder={chatHistory.length === 0 ? `Describe tasks for ${employee.name}…` : 'Ask to refine, add more, change priority…'}
+                  placeholder={chatHistory.length === 0 ? `Describe tasks for ${employee.name}\u2026` : 'Ask to refine, add more, change priority\u2026'}
                   disabled={chatLoading}
                   className="flex-1 text-xs bg-brown-50 border border-brown-200 rounded-xl px-3 py-2.5 outline-none focus:border-brown-500 transition-colors disabled:opacity-50 text-brown-800 placeholder-brown-400"
                 />
