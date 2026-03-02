@@ -16,13 +16,39 @@ import MarkdownRenderer from '../common/MarkdownRenderer'
 interface FileNode {
   id: string
   name: string
-  language: string
-  content: string
+  type: 'file' | 'folder'
+  language: string        // '' for folders
+  content: string         // '' for folders
+  parentId: string | null // null = root
+  isOpen: boolean         // folder expanded state
+}
+
+// Normalize legacy FileNode arrays (add missing fields)
+function normalizeFiles(nodes: any[]): FileNode[] {
+  return nodes.map(n => ({
+    ...n,
+    type:     n.type     ?? 'file',
+    parentId: n.parentId ?? null,
+    isOpen:   n.isOpen   ?? false,
+  }))
+}
+
+// Compute slash-separated path from root for a file (used for workspace writes)
+function getFilePath(file: FileNode, all: FileNode[]): string {
+  const parts: string[] = [file.name]
+  let cur = file
+  while (cur.parentId) {
+    const parent = all.find(f => f.id === cur.parentId)
+    if (!parent) break
+    parts.unshift(parent.name)
+    cur = parent
+  }
+  return parts.join('/')
 }
 
 // ─── Pre-populate files based on task category/title ─────────────────────────
 
-function getInitialFiles(task: Task): FileNode[] {
+function getInitialFiles(task: Task): any[] {
   const cat   = (task.category   ?? '').toLowerCase()
   const title = (task.title      ?? '').toLowerCase()
   const desc  = (task.description ?? '')
@@ -290,36 +316,11 @@ function langFromName(name: string): string {
   return 'plaintext'
 }
 
-// ─── Piston API executor (Python, C++) ────────────────────────────────────────
+// ─── Terminal config ──────────────────────────────────────────────────────────
 
-interface TerminalLine { text: string; type: 'cmd' | 'stdout' | 'stderr' | 'info' }
+interface TerminalLine { text: string; type: 'stdout' | 'stderr' | 'info' }
 
-async function runWithPiston(language: string, filename: string, code: string): Promise<TerminalLine[]> {
-  const pistonLang = language === 'cpp' || language === 'c' ? 'c++' : 'python'
-  const cmd = language === 'python' ? `python ${filename}` : `./${filename.replace(/\.cpp$/, '')}`
-  const lines: TerminalLine[] = [{ text: `$ ${cmd}`, type: 'cmd' }]
-  try {
-    const res = await fetch('https://emkc.org/api/v2/piston/execute', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        language: pistonLang,
-        version: '*',
-        files: [{ name: filename, content: code }],
-      }),
-    })
-    if (!res.ok) throw new Error(`Piston API error: ${res.status}`)
-    const data = await res.json()
-    const stdout = data?.run?.stdout?.trim()
-    const stderr = data?.run?.stderr?.trim()
-    if (stdout) stdout.split('\n').forEach((l: string) => lines.push({ text: l, type: 'stdout' }))
-    if (stderr) stderr.split('\n').forEach((l: string) => lines.push({ text: l, type: 'stderr' }))
-    if (!stdout && !stderr) lines.push({ text: '✓ Exited with code 0 — no output', type: 'info' })
-  } catch (err: any) {
-    lines.push({ text: `✗ ${err.message}`, type: 'stderr' })
-  }
-  return lines
-}
+const TERMINAL_WS_URL = 'wss://b9957ste.run.complete.dev/ws/terminal'
 
 // Safe JS sandbox using Function constructor
 function runJavaScript(code: string): string {
@@ -389,16 +390,71 @@ export default function CodePlaygroundModal({ task, onClose, onMarkDone }: Props
 
   // ── Restore from saved state or start fresh ──────────────────────────────
   const savedState   = task.playgroundState
-  const initialFiles = savedState?.codeFiles?.length ? (savedState.codeFiles as FileNode[]) : getInitialFiles(task)
+  const initialFiles = normalizeFiles(
+    savedState?.codeFiles?.length ? (savedState.codeFiles as FileNode[]) : getInitialFiles(task)
+  )
 
   const [files,         setFiles]         = useState<FileNode[]>(initialFiles)
   const [activeId,      setActiveId]      = useState<string>(savedState?.codeActiveId ?? initialFiles[0]?.id ?? '')
   const [output,        setOutput]        = useState<string>('')
   const [terminalLines, setTerminalLines] = useState<TerminalLine[]>([])
+  const [termInput,     setTermInput]     = useState<string>('')
   const [showConsole,   setShowConsole]   = useState(false)
   const [newFileName,   setNewFileName]   = useState('')
+  const [newItemType,   setNewItemType]   = useState<'file' | 'folder'>('file')
+  const [newItemParent, setNewItemParent] = useState<string | null>(null)
   const [showNewFile,   setShowNewFile]   = useState(false)
   const [running,       setRunning]       = useState(false)
+  const [wsConnected,   setWsConnected]   = useState(false)
+
+  // WebSocket ref for the bash terminal
+  const wsRef      = useRef<WebSocket | null>(null)
+  const termEndRef = useRef<HTMLDivElement>(null)
+
+  // Auto-scroll terminal to bottom
+  useEffect(() => { termEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [terminalLines])
+
+  // Open persistent WebSocket to backend terminal
+  useEffect(() => {
+    const connect = () => {
+      const ws = new WebSocket(TERMINAL_WS_URL)
+      ws.onopen  = () => setWsConnected(true)
+      ws.onclose = () => { setWsConnected(false); setTimeout(connect, 3000) }
+      ws.onerror = () => ws.close()
+      ws.onmessage = (evt) => {
+        const msg = JSON.parse(evt.data)
+        if (msg.type === 'stdout' || msg.type === 'stderr') {
+          const lineType: TerminalLine['type'] = msg.type
+          const chunks = msg.data.split('\n')
+          setTerminalLines(prev => {
+            const last = prev[prev.length - 1]
+            // Append to last incomplete line or push new lines
+            const result = [...prev]
+            chunks.forEach((chunk: string, i: number) => {
+              if (i === 0 && last && !last.text.endsWith('\n')) {
+                result[result.length - 1] = { ...last, text: last.text + chunk }
+              } else if (chunk !== '') {
+                result.push({ text: chunk, type: lineType })
+              }
+            })
+            return result
+          })
+        } else if (msg.type === 'done') {
+          setTerminalLines(prev => [
+            ...prev,
+            { text: `[exited with code ${msg.code}]`, type: 'info' }
+          ])
+          setRunning(false)
+        } else if (msg.type === 'error') {
+          setTerminalLines(prev => [...prev, { text: `✗ ${msg.data}`, type: 'stderr' }])
+          setRunning(false)
+        }
+      }
+      wsRef.current = ws
+    }
+    connect()
+    return () => { wsRef.current?.close() }
+  }, [])
 
   // ── AI panel draggable width ──────────────────────────────────────────────
   const [aiPanelWidth,   setAiPanelWidth]   = useState(320)
@@ -490,17 +546,32 @@ export default function CodePlaygroundModal({ task, onClose, onMarkDone }: Props
   const addFile = () => {
     const name = newFileName.trim()
     if (!name) return
-    const newFile: FileNode = {
+    const isFolder = newItemType === 'folder'
+    const newNode: FileNode = {
       id:       Date.now().toString(),
       name,
-      language: langFromName(name),
-      content:  `// ${name}\n`,
+      type:     isFolder ? 'folder' : 'file',
+      language: isFolder ? '' : langFromName(name),
+      content:  isFolder ? '' : `// ${name}\n`,
+      parentId: newItemParent,
+      isOpen:   isFolder,
     }
-    setFiles(prev => [...prev, newFile])
-    setActiveId(newFile.id)
+    setFiles(prev => {
+      // If creating inside a folder, ensure that folder is open
+      if (newItemParent) {
+        return prev.map(f => f.id === newItemParent ? { ...f, isOpen: true } : f).concat(newNode)
+      }
+      return [...prev, newNode]
+    })
+    if (!isFolder) setActiveId(newNode.id)
     setNewFileName('')
     setShowNewFile(false)
+    setNewItemParent(null)
+    setNewItemType('file')
   }
+
+  const toggleFolder = (id: string) =>
+    setFiles(prev => prev.map(f => f.id === id ? { ...f, isOpen: !f.isOpen } : f))
 
   const deleteFile = (id: string) => {
     setFiles(prev => {
@@ -510,38 +581,70 @@ export default function CodePlaygroundModal({ task, onClose, onMarkDone }: Props
     })
   }
 
-  const runCode = async () => {
-    if (!activeFile) return
-    setRunning(true)
-    setShowConsole(true)
-    setTerminalLines([])
-    setOutput('')
-    await new Promise(r => setTimeout(r, 80))
+  // Build the shell command to run the active file
+  const buildCommand = (file: FileNode): string | null => {
+    const lang = file.language
+    const path = getFilePath(file, files)
+    if (lang === 'javascript')  return `node ${path}`
+    if (lang === 'typescript')  return `npx ts-node ${path}`
+    if (lang === 'python')      return `python3 ${path}`
+    if (lang === 'cpp')         return `g++ -o /tmp/prog ${path} && /tmp/prog`
+    if (lang === 'c')           return `gcc -o /tmp/prog ${path} && /tmp/prog`
+    return null
+  }
+
+  // Send command + all current files to the backend WebSocket
+  const sendCommand = (cmd: string) => {
+    const ws = wsRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      setTerminalLines(prev => [...prev, { text: '✗ Terminal not connected — retrying…', type: 'stderr' }])
+      return
+    }
+    const filePayload = files
+      .filter(f => f.type === 'file')
+      .map(f => ({ path: getFilePath(f, files), content: f.content }))
+
+    ws.send(JSON.stringify({ type: 'execute', files: filePayload, command: cmd }))
+  }
+
+  const runCode = () => {
+    if (!activeFile || activeFile.type === 'folder') return
+    const cmd = buildCommand(activeFile)
+    if (!cmd) {
+      setShowConsole(true)
+      setTerminalLines([{ text: `ℹ️  No runner for ${activeFile.name} (${activeFile.language})`, type: 'info' }])
+      return
+    }
 
     const lang = activeFile.language
     if (lang === 'javascript' || lang === 'typescript') {
-      // JS: sandboxed in-browser execution
+      // JS stays sandboxed in-browser for instant feedback
       const result = runJavaScript(activeFile.content)
-      const cmd = lang === 'typescript' ? `ts-node ${activeFile.name}` : `node ${activeFile.name}`
+      setShowConsole(true)
       setTerminalLines([
-        { text: `$ ${cmd}`, type: 'cmd' },
-        ...result.split('\n').map(l => ({ text: l, type: 'stdout' as const })),
+        { text: result, type: 'stdout' },
+        { text: '[exited with code 0]', type: 'info' },
       ])
-    } else if (lang === 'python' || lang === 'cpp' || lang === 'c') {
-      // Python / C++: remote execution via Piston API
-      setTerminalLines([{ text: `$ Sending to remote executor…`, type: 'info' }])
-      const lines = await runWithPiston(lang, activeFile.name, activeFile.content)
-      setTerminalLines(lines)
-    } else {
-      setTerminalLines([{
-        text: `ℹ️  Run supports JavaScript, TypeScript, Python (.py) and C++ (.cpp).\nCurrent file: ${activeFile.name} (${lang})`,
-        type: 'info',
-      }])
+      return
     }
-    setRunning(false)
+
+    setRunning(true)
+    setShowConsole(true)
+    setTerminalLines([])
+    sendCommand(cmd)
   }
 
   const clearOutput = () => { setOutput(''); setTerminalLines([]) }
+
+  const handleTerminalInput = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== 'Enter') return
+    const cmd = termInput.trim()
+    if (!cmd) return
+    setTerminalLines(prev => [...prev, { text: `$ ${cmd}`, type: 'info' }])
+    setRunning(true)
+    sendCommand(cmd)
+    setTermInput('')
+  }
 
   // ── Send message to AI assistant ──────────────────────────────────────────
   const sendAiMessage = async (text?: string) => {
@@ -659,18 +762,23 @@ export default function CodePlaygroundModal({ task, onClose, onMarkDone }: Props
           <div className="flex items-center justify-between px-3 py-2.5 border-b border-white/10">
             <div className="flex items-center gap-1.5">
               <FolderOpen size={11} className="text-white/30" />
-              <span className="text-[10px] font-bold text-white/40 uppercase tracking-wider">Files</span>
+              <span className="text-[10px] font-bold text-white/40 uppercase tracking-wider">Explorer</span>
             </div>
-            <button
-              onClick={() => setShowNewFile(v => !v)}
-              className="p-1 rounded hover:bg-white/10 text-white/40 hover:text-white/80 transition-colors"
-              title="New file"
-            >
-              <Plus size={13} />
-            </button>
+            <div className="flex items-center gap-0.5">
+              <button
+                onClick={() => { setNewItemType('file'); setNewItemParent(null); setShowNewFile(v => !v) }}
+                className="p-1 rounded hover:bg-white/10 text-white/40 hover:text-white/80 transition-colors"
+                title="New file"
+              ><Plus size={13} /></button>
+              <button
+                onClick={() => { setNewItemType('folder'); setNewItemParent(null); setShowNewFile(v => !v) }}
+                className="p-1 rounded hover:bg-white/10 text-white/40 hover:text-yellow-400 transition-colors"
+                title="New folder"
+              ><FolderOpen size={12} /></button>
+            </div>
           </div>
 
-          {/* New file input */}
+          {/* New file/folder input */}
           {showNewFile && (
             <div className="px-2 pt-2 pb-1 border-b border-white/10">
               <input
@@ -679,41 +787,82 @@ export default function CodePlaygroundModal({ task, onClose, onMarkDone }: Props
                 onChange={e => setNewFileName(e.target.value)}
                 onKeyDown={e => {
                   if (e.key === 'Enter')  { addFile() }
-                  if (e.key === 'Escape') { setShowNewFile(false); setNewFileName('') }
+                  if (e.key === 'Escape') { setShowNewFile(false); setNewFileName(''); setNewItemParent(null) }
                 }}
-                placeholder="filename.js"
+                placeholder={newItemType === 'folder' ? 'folder-name' : 'filename.py'}
                 className="w-full bg-[#0f0f1a] text-white text-xs px-2 py-1.5 rounded border border-teal-500/50 focus:outline-none focus:border-teal-400 font-mono"
               />
-              <p className="text-[10px] text-white/25 mt-1 px-1">Enter to create · Esc to cancel</p>
+              <p className="text-[10px] text-white/25 mt-1 px-1">
+                {newItemType === 'folder' ? '📁 folder' : '📄 file'} · Enter to create · Esc to cancel
+              </p>
             </div>
           )}
 
-          {/* File list */}
+          {/* Recursive file tree */}
           <div className="flex-1 overflow-y-auto py-1">
-            {files.map(file => (
-              <div
-                key={file.id}
-                onClick={() => setActiveId(file.id)}
-                className={`flex items-center gap-1.5 pl-3 pr-2 py-1.5 cursor-pointer group transition-colors ${
-                  activeId === file.id
-                    ? 'bg-teal-500/20 text-white border-l-2 border-l-teal-400'
-                    : 'text-white/55 hover:bg-white/5 hover:text-white/80 border-l-2 border-l-transparent'
-                }`}
-              >
-                <ChevronRight size={9} className="text-white/15 flex-shrink-0" />
-                {getFileIcon(file.name)}
-                <span className="flex-1 text-xs font-mono truncate">{file.name}</span>
-                {files.length > 1 && (
-                  <button
-                    onClick={e => { e.stopPropagation(); deleteFile(file.id) }}
-                    className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-red-500/30 text-white/30 hover:text-red-400 transition-all flex-shrink-0"
-                    title="Delete file"
-                  >
-                    <Trash2 size={10} />
-                  </button>
-                )}
-              </div>
-            ))}
+            {(() => {
+              const renderTree = (parentId: string | null, depth: number): React.ReactNode => {
+                const children = files
+                  .filter(n => n.parentId === parentId)
+                  .sort((a, b) => {
+                    if (a.type !== b.type) return a.type === 'folder' ? -1 : 1
+                    return a.name.localeCompare(b.name)
+                  })
+                return children.map(node => {
+                  const isActive = activeId === node.id
+                  const indent = depth * 10 + 12
+                  if (node.type === 'folder') {
+                    return (
+                      <div key={node.id}>
+                        <div
+                          onClick={() => toggleFolder(node.id)}
+                          style={{ paddingLeft: indent }}
+                          className="flex items-center gap-1.5 pr-2 py-1.5 cursor-pointer group text-white/55 hover:bg-white/5 hover:text-white/80 transition-colors"
+                        >
+                          <ChevronRight size={9} className={`text-white/25 flex-shrink-0 transition-transform ${node.isOpen ? 'rotate-90' : ''}`} />
+                          <FolderOpen size={13} className="text-yellow-400/80 flex-shrink-0" />
+                          <span className="flex-1 text-xs font-mono truncate">{node.name}</span>
+                          <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5">
+                            <button
+                              onClick={e => { e.stopPropagation(); setNewItemType('file'); setNewItemParent(node.id); setShowNewFile(true) }}
+                              className="p-0.5 rounded hover:bg-white/10 text-white/30 hover:text-white/70"
+                              title="New file inside"
+                            ><Plus size={9} /></button>
+                            <button
+                              onClick={e => { e.stopPropagation(); deleteFile(node.id) }}
+                              className="p-0.5 rounded hover:bg-red-500/30 text-white/30 hover:text-red-400"
+                              title="Delete folder"
+                            ><Trash2 size={9} /></button>
+                          </div>
+                        </div>
+                        {node.isOpen && renderTree(node.id, depth + 1)}
+                      </div>
+                    )
+                  }
+                  return (
+                    <div
+                      key={node.id}
+                      onClick={() => setActiveId(node.id)}
+                      style={{ paddingLeft: indent }}
+                      className={`flex items-center gap-1.5 pr-2 py-1.5 cursor-pointer group transition-colors ${
+                        isActive
+                          ? 'bg-teal-500/20 text-white border-l-2 border-l-teal-400'
+                          : 'text-white/55 hover:bg-white/5 hover:text-white/80 border-l-2 border-l-transparent'
+                      }`}
+                    >
+                      {getFileIcon(node.name)}
+                      <span className="flex-1 text-xs font-mono truncate">{node.name}</span>
+                      <button
+                        onClick={e => { e.stopPropagation(); deleteFile(node.id) }}
+                        className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-red-500/30 text-white/30 hover:text-red-400 transition-all flex-shrink-0"
+                        title="Delete file"
+                      ><Trash2 size={10} /></button>
+                    </div>
+                  )
+                })
+              }
+              return renderTree(null, 0)
+            })()}
           </div>
 
           {/* Task subtasks panel */}
@@ -735,9 +884,9 @@ export default function CodePlaygroundModal({ task, onClose, onMarkDone }: Props
         {/* ── Editor + console (center) ────────────────────────────────────── */}
         <div className="flex-1 flex flex-col min-w-0">
 
-          {/* Tab bar */}
+          {/* Tab bar — only files, not folders */}
           <div className="flex items-center bg-[#12121f] border-b border-white/10 overflow-x-auto flex-shrink-0 scrollbar-none">
-            {files.map(file => (
+            {files.filter(f => f.type === 'file').map(file => (
               <button
                 key={file.id}
                 onClick={() => setActiveId(file.id)}
@@ -793,8 +942,8 @@ export default function CodePlaygroundModal({ task, onClose, onMarkDone }: Props
 
           {/* Terminal */}
           {showConsole && (
-            <div className="h-52 bg-[#0c0c14] border-t border-white/10 flex flex-col flex-shrink-0">
-              {/* Title bar with traffic-light dots */}
+            <div className="h-56 bg-[#0c0c14] border-t border-white/10 flex flex-col flex-shrink-0">
+              {/* Title bar */}
               <div className="flex items-center justify-between px-3 py-1.5 border-b border-white/8 bg-[#111120] flex-shrink-0">
                 <div className="flex items-center gap-2">
                   <div className="flex items-center gap-1.5">
@@ -804,43 +953,51 @@ export default function CodePlaygroundModal({ task, onClose, onMarkDone }: Props
                   </div>
                   <div className="flex items-center gap-1.5 ml-2">
                     <Terminal size={10} className="text-white/30" />
-                    <span className="text-[10px] font-semibold text-white/30 tracking-wide">bash — {activeFile?.name ?? 'terminal'}</span>
+                    <span className="text-[10px] font-semibold text-white/30 tracking-wide">bash</span>
+                    <span className={`ml-1 w-1.5 h-1.5 rounded-full ${wsConnected ? 'bg-green-500' : 'bg-red-500'}`} title={wsConnected ? 'Connected' : 'Reconnecting…'} />
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
                   {running && <Loader2 size={10} className="text-green-400 animate-spin" />}
                   <button onClick={clearOutput} className="text-[10px] text-white/20 hover:text-white/50 transition-colors font-mono">clear</button>
-                  <button onClick={() => setShowConsole(false)} className="text-white/20 hover:text-white/50 transition-colors">
-                    <X size={11} />
-                  </button>
+                  <button onClick={() => setShowConsole(false)} className="text-white/20 hover:text-white/50 transition-colors"><X size={11} /></button>
                 </div>
               </div>
 
-              {/* Terminal body */}
+              {/* Output area */}
               <div className="flex-1 overflow-y-auto px-3 py-2 font-mono text-xs leading-relaxed">
                 {terminalLines.length === 0 && !running ? (
                   <p className="text-white/15 italic">
-                    Press <span className="text-green-500/60 not-italic">▶ Run</span> to execute — supports JS, Python and C++
+                    Press <span className="text-green-500/60 not-italic font-semibold">▶ Run</span> to execute, or type a command below
                   </p>
                 ) : (
                   <div className="space-y-0.5">
                     {terminalLines.map((line, i) => (
                       <div key={i} className={
-                        line.type === 'cmd'    ? 'text-green-400 font-semibold' :
-                        line.type === 'stderr' ? 'text-red-400' :
-                        line.type === 'info'   ? 'text-white/40 italic' :
-                        'text-gray-200'
+                        line.type === 'stderr' ? 'text-red-400 whitespace-pre-wrap' :
+                        line.type === 'info'   ? 'text-white/35 italic' :
+                        'text-gray-200 whitespace-pre-wrap'
                       }>
                         {line.text}
                       </div>
                     ))}
-                    {running && (
-                      <div className="flex items-center gap-1.5 text-green-400/60">
-                        <span className="animate-pulse">▋</span>
-                      </div>
-                    )}
+                    {running && <span className="text-green-400/50 animate-pulse">▋</span>}
+                    <div ref={termEndRef} />
                   </div>
                 )}
+              </div>
+
+              {/* Command input */}
+              <div className="border-t border-white/8 px-3 py-1.5 flex items-center gap-2 bg-[#0f0f1c] flex-shrink-0">
+                <span className="text-green-500 font-mono text-xs select-none">$</span>
+                <input
+                  value={termInput}
+                  onChange={e => setTermInput(e.target.value)}
+                  onKeyDown={handleTerminalInput}
+                  placeholder="python3 main.py  ·  g++ main.cpp -o app && ./app  ·  ls …"
+                  disabled={running}
+                  className="flex-1 bg-transparent text-xs font-mono text-white placeholder-white/15 focus:outline-none disabled:opacity-40"
+                />
               </div>
             </div>
           )}
