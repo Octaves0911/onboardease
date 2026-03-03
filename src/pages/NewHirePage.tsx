@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useParams, Navigate } from 'react-router-dom'
 import {
   LayoutDashboard, CheckSquare, Calendar, MessageSquare,
   Users, Settings, ChevronLeft, ChevronRight
@@ -8,6 +9,7 @@ import NewHireDashboard from '../components/dashboard/NewHireDashboard'
 import ChatTab, { useChatUnread } from '../components/chat/ChatTab'
 import Logo from '../components/common/Logo'
 import OnboardBotWidget from '../components/chat/OnboardBotWidget'
+import { useApp } from '../context/AppContext'
 
 const navItems = [
   { icon: <LayoutDashboard size={20} />, label: 'Overview',   id: 'dashboard' },
@@ -70,10 +72,23 @@ function NewHireNav({
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function NewHirePage() {
-  const [collapsed,      setCollapsed]      = useState(false)
-  const [active,         setActive]         = useState('dashboard')
+  const { employeeId }                       = useParams<{ employeeId: string }>()
+  const { state, dispatch }                  = useApp()
+  const [collapsed,      setCollapsed]       = useState(false)
+  const [active,         setActive]          = useState('dashboard')
   // When set, ChatTab will auto-open a conversation with this user id
-  const [chatWithUserId, setChatWithUserId] = useState<string | undefined>()
+  const [chatWithUserId, setChatWithUserId]  = useState<string | undefined>()
+
+  // Restore role from URL on every mount/reload — survives page refresh
+  useEffect(() => {
+    if (employeeId) {
+      dispatch({ type: 'SET_ROLE', payload: { role: 'employee', userId: employeeId } })
+    }
+  }, [employeeId, dispatch])
+
+  // Guard: redirect to login if the UUID isn't a known employee
+  const validEmployee = state.employees.find(e => e.id === employeeId)
+  if (!validEmployee) return <Navigate to="/login" replace />
 
   const handleMessageMentor = (mentorId: string) => {
     setChatWithUserId(mentorId)

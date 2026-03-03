@@ -75,13 +75,6 @@ export default function Hero() {
         {/* CTA Buttons */}
         <div className="flex flex-col sm:flex-row gap-3 justify-center mb-10">
           <Link
-            to="/setup"
-            className="btn-primary inline-flex items-center justify-center gap-2 text-base"
-          >
-            Start Free Trial
-            <ArrowRight size={18} />
-          </Link>
-          <Link
             to="/login"
             className="btn-secondary inline-flex items-center justify-center gap-2 text-base"
           >

@@ -309,7 +309,7 @@ function MenteeCard({
   const allTasks = state.tasks.filter(t => t.assignedTo === mentee.id)
   const computedProgress = allTasks.length > 0
     ? Math.round((allTasks.filter(t => t.status === 'done').length / allTasks.length) * 100)
-    : mentee.progress
+    : 0
 
   const status = mentee.risk === 'high' ? 'at-risk' : computedProgress > 70 ? 'ahead' : 'on-track'
   const badgeCls =
@@ -451,12 +451,12 @@ function OverviewSection({
   const [pgTask,     setPgTask]     = useState<Task | null>(null)
   const [pgEmployee, setPgEmployee] = useState<Employee | null>(null)
 
-  // Compute progress from actual task completion (falls back to static if no tasks)
+  // Compute progress strictly from task completion — 0% if no tasks assigned
   const getComputedProgress = (emp: Employee) => {
     const tasks = state.tasks.filter(t => t.assignedTo === emp.id)
     return tasks.length > 0
       ? Math.round((tasks.filter(t => t.status === 'done').length / tasks.length) * 100)
-      : emp.progress
+      : 0
   }
 
   const avgProgress = myMentees.length > 0
@@ -693,7 +693,7 @@ function MenteesSection({ myMentees }: { myMentees: Employee[] }) {
 
   const getProgress = (emp: Employee) => {
     const tasks = state.tasks.filter(t => t.assignedTo === emp.id)
-    if (tasks.length === 0) return emp.progress
+    if (tasks.length === 0) return 0
     const done = tasks.filter(t => t.status === 'done').length
     return Math.round((done / tasks.length) * 100)
   }

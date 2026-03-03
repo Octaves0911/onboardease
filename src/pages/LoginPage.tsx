@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Shield, Users, UserCheck, User, ArrowRight, ChevronLeft } from 'lucide-react'
 import Logo from '../components/common/Logo'
-import { useApp, initialMentors } from '../context/AppContext'
+import { useApp, initialMentors, USER_UUIDS } from '../context/AppContext'
 
 type RoleStep = 'pick-role' | 'pick-mentor' | 'pick-employee'
 
@@ -14,7 +14,6 @@ const ROLE_CARDS = [
     icon: <Shield size={32} />,
     color: 'from-brown-700 to-brown-900',
     bg: 'bg-white/80 border-brown-300',
-    route: '/admin',
   },
   {
     role: 'hr' as const,
@@ -23,7 +22,6 @@ const ROLE_CARDS = [
     icon: <Users size={32} />,
     color: 'from-purple-600 to-purple-800',
     bg: 'bg-white/80 border-purple-300',
-    route: '/hr',
   },
   {
     role: 'mentor' as const,
@@ -32,7 +30,6 @@ const ROLE_CARDS = [
     icon: <UserCheck size={32} />,
     color: 'from-teal-600 to-teal-800',
     bg: 'bg-white/80 border-teal-300',
-    route: '/mentor',
   },
   {
     role: 'employee' as const,
@@ -41,7 +38,6 @@ const ROLE_CARDS = [
     icon: <User size={32} />,
     color: 'from-green-600 to-green-800',
     bg: 'bg-white/80 border-green-300',
-    route: '/new-hire',
   },
 ]
 
@@ -58,9 +54,12 @@ export default function LoginPage() {
     } else if (card.role === 'employee') {
       setSelectedRole(card)
       setStep('pick-employee')
-    } else {
-      dispatch({ type: 'SET_ROLE', payload: { role: card.role } })
-      navigate(card.route)
+    } else if (card.role === 'admin') {
+      dispatch({ type: 'SET_ROLE', payload: { role: 'admin', userId: USER_UUIDS.ADMIN } })
+      navigate(`/admin/${USER_UUIDS.ADMIN}`)
+    } else if (card.role === 'hr') {
+      dispatch({ type: 'SET_ROLE', payload: { role: 'hr', userId: USER_UUIDS.HR } })
+      navigate(`/hr/${USER_UUIDS.HR}`)
     }
   }
 
@@ -71,7 +70,7 @@ export default function LoginPage() {
 
   const handleEmployeeSelect = (employeeId: string) => {
     dispatch({ type: 'SET_ROLE', payload: { role: 'employee', userId: employeeId } })
-    navigate('/new-hire')
+    navigate(`/new-hire/${employeeId}`)
   }
 
   return (

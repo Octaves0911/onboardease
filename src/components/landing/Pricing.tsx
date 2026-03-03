@@ -139,17 +139,6 @@ export default function Pricing() {
                   )}
                 </div>
 
-                <Link
-                  to="/setup"
-                  className={`block text-center py-3 px-6 rounded-xl font-semibold text-sm mb-6 transition-all duration-200 ${
-                    plan.highlighted
-                      ? 'bg-white text-brown-900 hover:bg-brown-50'
-                      : 'bg-brown-500 text-white hover:bg-brown-600'
-                  }`}
-                >
-                  {plan.cta}
-                </Link>
-
                 <ul className="space-y-3">
                   {plan.features.map(feature => (
                     <li key={feature} className="flex items-start gap-2.5">

@@ -131,11 +131,21 @@ export interface Meeting {
 
 export interface Notification {
   id: string
-  type: 'task_assigned' | 'employee_added' | 'employee_removed'
+  type:
+    | 'task_assigned'       // new hire received a task
+    | 'task_created'        // task created by hr / admin / mentor (cross-role)
+    | 'task_status_changed' // new hire changed task status
+    | 'task_feedback_added' // feedback added on a task
+    | 'employee_added'      // new hire joined onboarding
+    | 'employee_removed'    // new hire removed
+    | 'mentor_assigned'     // mentor assigned to a new hire
   message: string
   createdAt: string
-  read: boolean
-  mentorId?: string   // if set, only surfaces to this mentor's bell icon
+  read: boolean           // kept for compatibility
+  readBy: string[]        // per-user read tracking — stores userIds who have read this
+  targetRoles: Array<'admin' | 'hr' | 'mentor' | 'employee'>
+  mentorId?: string       // narrows mentor notifications to a specific mentor
+  employeeId?: string     // narrows employee notifications to a specific new hire
 }
 
 // ─── Chat ────────────────────────────────────────────────────────────────────
@@ -207,6 +217,7 @@ type Action =
   | { type: 'REMOVE_DOCUMENT'; payload: { id: string } }
   | { type: 'MARK_NOTIFICATIONS_READ' }
   | { type: 'MARK_MENTOR_NOTIFICATIONS_READ'; payload: { mentorId: string } }
+  | { type: 'MARK_NOTIFICATIONS_READ_FOR_USER'; payload: { userId: string } }
   | { type: 'ADD_TASK_FEEDBACK'; payload: { taskId: string; feedback: TaskFeedback } }
   | { type: 'UPDATE_EMPLOYEE_BIO'; payload: { id: string; bio: string } }
   | { type: 'SET_MENTOR_PLAYGROUND'; payload: { mentorName: string; enabled: boolean } }
@@ -215,21 +226,38 @@ type Action =
   | { type: 'MARK_CHAT_READ'; payload: { conversationId: string; userId: string } }
   | { type: 'UPDATE_COMPANY_SETTINGS'; payload: CompanySettings }
 
+// ─── Static UUIDs for all users ───────────────────────────────────────────────
+
+export const USER_UUIDS = {
+  // Employees
+  EMP_1: 'd290f1ee-6c54-4b01-90e6-d701748f0851',  // Jordan Lee
+  EMP_2: '7c9e6679-7425-40de-944b-e07fc1f90ae7',  // Priya Kapoor
+  EMP_3: 'e4b65014-79c4-4a29-a20e-b6adaef744b2',  // Marcus Stone
+  EMP_4: '52a98ff7-1c88-4b56-a82c-8b85f3d9e541',  // Aiko Tanaka
+  // Mentors
+  MENTOR_1: '4b8a5e9f-2d7c-4f3a-8e1b-9c0a6d4f2e17', // Sarah Chen
+  MENTOR_2: '6f3d2a1b-8e7c-4d5f-9a2e-1b0c8f7d3e4a', // Mike Johnson
+  MENTOR_3: '3a7f1c9e-5b2d-4e8a-b6f0-2c4d7e1f9a3b', // Priya Patel
+  // Admin & HR (static identities)
+  ADMIN: 'a0000000-0000-4000-8000-000000000001',
+  HR:    'b0000000-0000-4000-8000-000000000002',
+}
+
 // ─── Initial Data ─────────────────────────────────────────────────────────────
 
 const COLORS = ['#2B85DC', '#4EA0EB', '#7DBCF5', '#B3D8FF', '#1F6EC4', '#1558A8']
 
 export const initialMentors: MentorUser[] = [
-  { id: 'mentor-1', name: 'Sarah Chen', specialty: 'Engineering & Architecture', department: 'Engineering', initials: 'SC', color: '#2B85DC' },
-  { id: 'mentor-2', name: 'Mike Johnson', specialty: 'Sales & Business Development', department: 'Sales', initials: 'MJ', color: '#4EA0EB' },
-  { id: 'mentor-3', name: 'Priya Patel', specialty: 'Design & Product', department: 'Product', initials: 'PP', color: '#7DBCF5' },
+  { id: USER_UUIDS.MENTOR_1, name: 'Sarah Chen',   specialty: 'Engineering & Architecture',    department: 'Engineering', initials: 'SC', color: '#2B85DC' },
+  { id: USER_UUIDS.MENTOR_2, name: 'Mike Johnson', specialty: 'Sales & Business Development',  department: 'Sales',       initials: 'MJ', color: '#4EA0EB' },
+  { id: USER_UUIDS.MENTOR_3, name: 'Priya Patel',  specialty: 'Design & Product',              department: 'Product',     initials: 'PP', color: '#7DBCF5' },
 ]
 
 const initialEmployees: Employee[] = [
-  { id: 'emp-1', name: 'Jordan Lee', role: 'Software Engineer', email: 'jordan@company.com', team: 'Engineering', mentorId: 'mentor-1', startDate: 'Feb 24, 2026', progress: 22, day: 2, totalDays: 30, status: 'onboarding', risk: 'low', initials: 'JL', color: COLORS[0] },
-  { id: 'emp-2', name: 'Priya Kapoor', role: 'Product Manager', email: 'priya.k@company.com', team: 'Product', mentorId: 'mentor-3', startDate: 'Feb 20, 2026', progress: 54, day: 6, totalDays: 30, status: 'onboarding', risk: 'low', initials: 'PK', color: COLORS[1] },
-  { id: 'emp-3', name: 'Marcus Stone', role: 'Sales Representative', email: 'marcus@company.com', team: 'Sales', mentorId: 'mentor-2', startDate: 'Feb 17, 2026', progress: 31, day: 9, totalDays: 21, status: 'onboarding', risk: 'high', initials: 'MS', color: COLORS[2] },
-  { id: 'emp-4', name: 'Aiko Tanaka', role: 'UX Designer', email: 'aiko@company.com', team: 'Design', mentorId: 'mentor-3', startDate: 'Feb 10, 2026', progress: 78, day: 16, totalDays: 21, status: 'onboarding', risk: 'low', initials: 'AT', color: COLORS[3] },
+  { id: USER_UUIDS.EMP_1, name: 'Jordan Lee',    role: 'Software Engineer',    email: 'jordan@company.com',   team: 'Engineering', mentorId: USER_UUIDS.MENTOR_1, startDate: 'Feb 24, 2026', progress: 22, day: 2,  totalDays: 30, status: 'onboarding', risk: 'low',  initials: 'JL', color: COLORS[0] },
+  { id: USER_UUIDS.EMP_2, name: 'Priya Kapoor',  role: 'Product Manager',      email: 'priya.k@company.com',  team: 'Product',     mentorId: USER_UUIDS.MENTOR_3, startDate: 'Feb 20, 2026', progress: 54, day: 6,  totalDays: 30, status: 'onboarding', risk: 'low',  initials: 'PK', color: COLORS[1] },
+  { id: USER_UUIDS.EMP_3, name: 'Marcus Stone',  role: 'Sales Representative', email: 'marcus@company.com',   team: 'Sales',       mentorId: USER_UUIDS.MENTOR_2, startDate: 'Feb 17, 2026', progress: 31, day: 9,  totalDays: 21, status: 'onboarding', risk: 'high', initials: 'MS', color: COLORS[2] },
+  { id: USER_UUIDS.EMP_4, name: 'Aiko Tanaka',   role: 'UX Designer',          email: 'aiko@company.com',     team: 'Design',      mentorId: USER_UUIDS.MENTOR_3, startDate: 'Feb 10, 2026', progress: 78, day: 16, totalDays: 21, status: 'onboarding', risk: 'low',  initials: 'AT', color: COLORS[3] },
 ]
 
 const initialDocuments: Document[] = [
@@ -240,29 +268,60 @@ const initialDocuments: Document[] = [
 ]
 
 const initialMeetings: Meeting[] = [
-  { id: 'meet-1', title: '1:1 Onboarding Sync', date: '2026-03-01', time: '10:00 AM', mentorId: 'mentor-1', employeeId: 'emp-1', description: 'Weekly sync to review onboarding progress and address any blockers', link: 'https://meet.google.com/abc-defg-hij' },
-  { id: 'meet-2', title: 'Tech Stack Deep Dive', date: '2026-03-03', time: '2:00 PM', mentorId: 'mentor-1', employeeId: 'emp-1', description: 'Walkthrough of the React + TypeScript codebase and system architecture', link: 'https://zoom.us/j/123456789' },
-  { id: 'meet-3', title: 'Code Review Walkthrough', date: '2026-03-06', time: '11:00 AM', mentorId: 'mentor-1', employeeId: 'emp-1', description: 'Review your first PR together and learn team code review standards' },
-  { id: 'meet-4', title: 'Product Roadmap Review', date: '2026-03-02', time: '11:00 AM', mentorId: 'mentor-3', employeeId: 'emp-2', description: 'Overview of Q1 product roadmap and how your role contributes', link: 'https://meet.google.com/xyz-uvwx-yz' },
-  { id: 'meet-5', title: 'CRM Demo & Walkthrough', date: '2026-03-04', time: '3:00 PM', mentorId: 'mentor-2', employeeId: 'emp-3', description: 'Live demo of Salesforce CRM and your territory pipeline setup' },
+  { id: 'meet-1', title: '1:1 Onboarding Sync',    date: '2026-03-01', time: '10:00 AM', mentorId: USER_UUIDS.MENTOR_1, employeeId: USER_UUIDS.EMP_1, description: 'Weekly sync to review onboarding progress and address any blockers', link: 'https://meet.google.com/abc-defg-hij' },
+  { id: 'meet-2', title: 'Tech Stack Deep Dive',    date: '2026-03-03', time: '2:00 PM',  mentorId: USER_UUIDS.MENTOR_1, employeeId: USER_UUIDS.EMP_1, description: 'Walkthrough of the React + TypeScript codebase and system architecture', link: 'https://zoom.us/j/123456789' },
+  { id: 'meet-3', title: 'Code Review Walkthrough', date: '2026-03-06', time: '11:00 AM', mentorId: USER_UUIDS.MENTOR_1, employeeId: USER_UUIDS.EMP_1, description: 'Review your first PR together and learn team code review standards' },
+  { id: 'meet-4', title: 'Product Roadmap Review',  date: '2026-03-02', time: '11:00 AM', mentorId: USER_UUIDS.MENTOR_3, employeeId: USER_UUIDS.EMP_2, description: 'Overview of Q1 product roadmap and how your role contributes', link: 'https://meet.google.com/xyz-uvwx-yz' },
+  { id: 'meet-5', title: 'CRM Demo & Walkthrough',  date: '2026-03-04', time: '3:00 PM',  mentorId: USER_UUIDS.MENTOR_2, employeeId: USER_UUIDS.EMP_3, description: 'Live demo of Salesforce CRM and your territory pipeline setup' },
 ]
 
 const initialTasks: Task[] = [
-  { id: 'task-init-1', title: 'Complete company overview module', description: 'Watch company overview video and complete knowledge check', category: 'Learning', estimatedTime: '20 min', assignedTo: 'emp-1', assignedBy: 'hr', assignedByName: 'HR Team', status: 'done', createdAt: '2026-02-24' },
-  { id: 'task-init-2', title: 'Set up Slack workspace', description: 'Install Slack, join all required channels, update profile', category: 'Tools', estimatedTime: '5 min', assignedTo: 'emp-1', assignedBy: 'admin', assignedByName: 'Admin', status: 'done', createdAt: '2026-02-24' },
-  { id: 'task-init-3', title: 'Meet your buddy Sarah Chen', description: 'Schedule and complete first 1:1 with your assigned mentor', category: 'People', estimatedTime: '30 min', assignedTo: 'emp-1', assignedBy: 'admin', assignedByName: 'Admin', status: 'in-progress', createdAt: '2026-02-24' },
-  { id: 'task-init-4', title: 'Review employee handbook', description: 'Read all sections and acknowledge receipt', category: 'Compliance', estimatedTime: '45 min', assignedTo: 'emp-1', assignedBy: 'hr', assignedByName: 'HR Team', status: 'pending', createdAt: '2026-02-24' },
-  { id: 'task-init-5', title: 'Complete IT security training', description: 'Finish the mandatory cybersecurity awareness course', category: 'Compliance', estimatedTime: '30 min', assignedTo: 'emp-2', assignedBy: 'hr', assignedByName: 'HR Team', status: 'done', createdAt: '2026-02-20' },
-  { id: 'task-init-6', title: 'Set up product management tools', description: 'Access Jira, Confluence, and Figma with required permissions', category: 'Tools', estimatedTime: '20 min', assignedTo: 'emp-2', assignedBy: 'admin', assignedByName: 'Admin', status: 'done', createdAt: '2026-02-20' },
-  { id: 'task-init-7', title: 'Salesforce CRM walkthrough', description: 'Complete CRM tour and enter first 5 mock deals', category: 'Tools', estimatedTime: '60 min', assignedTo: 'emp-3', assignedBy: 'mentor', assignedByName: 'Mike Johnson', status: 'pending', createdAt: '2026-02-17' },
+  { id: 'task-init-1', title: 'Complete company overview module', description: 'Watch company overview video and complete knowledge check', category: 'Learning',   estimatedTime: '20 min', assignedTo: USER_UUIDS.EMP_1, assignedBy: 'hr',     assignedByName: 'HR Team',     status: 'done',        createdAt: '2026-02-24' },
+  { id: 'task-init-2', title: 'Set up Slack workspace',           description: 'Install Slack, join all required channels, update profile',       category: 'Tools',      estimatedTime: '5 min',  assignedTo: USER_UUIDS.EMP_1, assignedBy: 'admin',  assignedByName: 'Admin',       status: 'done',        createdAt: '2026-02-24' },
+  { id: 'task-init-3', title: 'Meet your buddy Sarah Chen',       description: 'Schedule and complete first 1:1 with your assigned mentor',       category: 'People',     estimatedTime: '30 min', assignedTo: USER_UUIDS.EMP_1, assignedBy: 'admin',  assignedByName: 'Admin',       status: 'in-progress', createdAt: '2026-02-24' },
+  { id: 'task-init-4', title: 'Review employee handbook',         description: 'Read all sections and acknowledge receipt',                        category: 'Compliance', estimatedTime: '45 min', assignedTo: USER_UUIDS.EMP_1, assignedBy: 'hr',     assignedByName: 'HR Team',     status: 'pending',     createdAt: '2026-02-24' },
+  { id: 'task-init-5', title: 'Complete IT security training',    description: 'Finish the mandatory cybersecurity awareness course',              category: 'Compliance', estimatedTime: '30 min', assignedTo: USER_UUIDS.EMP_2, assignedBy: 'hr',     assignedByName: 'HR Team',     status: 'done',        createdAt: '2026-02-20' },
+  { id: 'task-init-6', title: 'Set up product management tools',  description: 'Access Jira, Confluence, and Figma with required permissions',    category: 'Tools',      estimatedTime: '20 min', assignedTo: USER_UUIDS.EMP_2, assignedBy: 'admin',  assignedByName: 'Admin',       status: 'done',        createdAt: '2026-02-20' },
+  { id: 'task-init-7', title: 'Salesforce CRM walkthrough',       description: 'Complete CRM tour and enter first 5 mock deals',                  category: 'Tools',      estimatedTime: '60 min', assignedTo: USER_UUIDS.EMP_3, assignedBy: 'mentor', assignedByName: 'Mike Johnson', status: 'pending',     createdAt: '2026-02-17' },
 ]
+
+// ─── Notification Factory ─────────────────────────────────────────────────────
+
+function makeNotif(
+  type: Notification['type'],
+  message: string,
+  targetRoles: Notification['targetRoles'],
+  extras?: { mentorId?: string; employeeId?: string }
+): Notification {
+  return {
+    id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    type,
+    message,
+    createdAt: new Date().toISOString(),
+    read: false,
+    readBy: [],
+    targetRoles,
+    ...extras,
+  }
+}
 
 // ─── Load/Save from localStorage ─────────────────────────────────────────────
 
-const STORAGE_KEY = 'onboardease_state'
+const STORAGE_KEY    = 'onboardease_state'
+// Bump this version whenever IDs or data shape changes — forces a clean reset
+const STORAGE_VERSION = '3'
+const VERSION_KEY     = 'onboardease_version'
 
 function loadState(): Partial<AppState> {
   try {
+    // If the stored version doesn't match, wipe old data so stale IDs don't
+    // cause broken mentor-mentee lookups or missing task assignments.
+    const storedVersion = localStorage.getItem(VERSION_KEY)
+    if (storedVersion !== STORAGE_VERSION) {
+      localStorage.removeItem(STORAGE_KEY)
+      localStorage.setItem(VERSION_KEY, STORAGE_VERSION)
+      return {}
+    }
     const raw = localStorage.getItem(STORAGE_KEY)
     return raw ? JSON.parse(raw) : {}
   } catch { return {} }
@@ -303,59 +362,90 @@ function reducer(state: AppState, action: Action): AppState {
     case 'LOGOUT':
       return { ...state, currentRole: null, currentUserId: null }
     case 'ADD_EMPLOYEE': {
-      const notif: Notification = {
-        id: `notif-${Date.now()}`,
-        type: 'employee_added',
-        message: `New employee ${action.payload.name} (${action.payload.role}) added to onboarding`,
-        createdAt: new Date().toISOString(),
-        read: false,
+      const emp = action.payload
+      const newNotifs: Notification[] = [...state.notifications]
+      // Admin + HR notified about any new hire
+      newNotifs.push(makeNotif('employee_added', `New employee ${emp.name} (${emp.role}) has been added to onboarding`, ['admin', 'hr']))
+      // Assigned mentor notified
+      if (emp.mentorId) {
+        newNotifs.push(makeNotif('mentor_assigned', `${emp.name} (${emp.role}) has been assigned to you as a mentee`, ['mentor'], { mentorId: emp.mentorId }))
       }
-      const newNotifs: Notification[] = [...state.notifications, notif]
-      // Fire a mentor-scoped notification if a mentor is assigned
-      if (action.payload.mentorId) {
-        newNotifs.push({
-          id: `notif-mentor-${Date.now()}`,
-          type: 'employee_added',
-          message: `${action.payload.name} (${action.payload.role}) has been assigned to you as a mentee`,
-          createdAt: new Date().toISOString(),
-          read: false,
-          mentorId: action.payload.mentorId,
-        })
-      }
-      return { ...state, employees: [...state.employees, action.payload], notifications: newNotifs }
+      return { ...state, employees: [...state.employees, emp], notifications: newNotifs }
     }
     case 'ADD_TASK': {
-      const newNotifs = action.payload.assignedBy === 'admin'
-        ? [...state.notifications, {
-            id: `notif-${Date.now()}`,
-            type: 'task_assigned' as const,
-            message: `Admin assigned "${action.payload.title}"`,
-            createdAt: new Date().toISOString(),
-            read: false,
-          }]
-        : state.notifications
-      return { ...state, tasks: [...state.tasks, action.payload], notifications: newNotifs }
+      const task = action.payload
+      const employee = state.employees.find(e => e.id === task.assignedTo)
+      const empName  = employee?.name ?? 'employee'
+      const newNotifs: Notification[] = [...state.notifications]
+      // Admin always gets notified of any task creation
+      newNotifs.push(makeNotif('task_created', `${task.assignedByName} created task "${task.title}" for ${empName}`, ['admin']))
+      // New hire always notified when a task is assigned to them
+      newNotifs.push(makeNotif('task_assigned', `New task "${task.title}" has been assigned to you`, ['employee'], { employeeId: task.assignedTo }))
+      // HR notified when a mentor creates a task
+      if (task.assignedBy === 'mentor') {
+        newNotifs.push(makeNotif('task_created', `Mentor ${task.assignedByName} created task "${task.title}" for ${empName}`, ['hr']))
+      }
+      // Mentor notified when HR or Admin creates a task for their mentee
+      if ((task.assignedBy === 'hr' || task.assignedBy === 'admin') && employee?.mentorId) {
+        newNotifs.push(makeNotif('task_created', `${task.assignedByName} created task "${task.title}" for your mentee ${empName}`, ['mentor'], { mentorId: employee.mentorId }))
+      }
+      return { ...state, tasks: [...state.tasks, task], notifications: newNotifs }
     }
     case 'ADD_TASKS': {
-      const adminTasks = action.payload.filter(t => t.assignedBy === 'admin')
-      const newNotifs = adminTasks.length > 0
-        ? [...state.notifications, {
-            id: `notif-${Date.now()}`,
-            type: 'task_assigned' as const,
-            message: `Admin assigned ${adminTasks.length} new task${adminTasks.length > 1 ? 's' : ''}`,
-            createdAt: new Date().toISOString(),
-            read: false,
-          }]
-        : state.notifications
-      return { ...state, tasks: [...state.tasks, ...action.payload], notifications: newNotifs }
+      const tasks = action.payload
+      const newNotifs: Notification[] = [...state.notifications]
+      if (tasks.length > 0) {
+        // Group by assignee for clean per-employee notifications
+        const byAssignee: Record<string, Task[]> = {}
+        tasks.forEach(t => { byAssignee[t.assignedTo] = [...(byAssignee[t.assignedTo] ?? []), t] })
+        Object.entries(byAssignee).forEach(([empId, empTasks]) => {
+          const employee       = state.employees.find(e => e.id === empId)
+          const empName        = employee?.name ?? 'employee'
+          const count          = empTasks.length
+          const assignedBy     = empTasks[0].assignedBy
+          const assignedByName = empTasks[0].assignedByName
+          const label          = `${count} task${count > 1 ? 's' : ''}`
+          // Admin
+          newNotifs.push(makeNotif('task_created', `${assignedByName} created ${label} for ${empName}`, ['admin']))
+          // New hire
+          newNotifs.push(makeNotif('task_assigned', `${count} new task${count > 1 ? 's have' : ' has'} been assigned to you`, ['employee'], { employeeId: empId }))
+          // HR ← mentor created
+          if (assignedBy === 'mentor') {
+            newNotifs.push(makeNotif('task_created', `Mentor ${assignedByName} created ${label} for ${empName}`, ['hr']))
+          }
+          // Mentor ← hr/admin created
+          if ((assignedBy === 'hr' || assignedBy === 'admin') && employee?.mentorId) {
+            newNotifs.push(makeNotif('task_created', `${assignedByName} created ${label} for your mentee ${empName}`, ['mentor'], { mentorId: employee.mentorId }))
+          }
+        })
+      }
+      return { ...state, tasks: [...state.tasks, ...tasks], notifications: newNotifs }
     }
-    case 'UPDATE_TASK_STATUS':
+    case 'UPDATE_TASK_STATUS': {
+      const task       = state.tasks.find(t => t.id === action.payload.id)
+      const newStatus  = action.payload.status
+      const newNotifs: Notification[] = [...state.notifications]
+      if (task) {
+        const employee   = state.employees.find(e => e.id === task.assignedTo)
+        const empName    = employee?.name ?? 'employee'
+        const statusVerb = newStatus === 'done' ? 'completed' : newStatus === 'in-progress' ? 'started' : 'updated'
+        // Admin always notified on any task status change by new hire
+        newNotifs.push(makeNotif('task_status_changed', `${empName} ${statusVerb} task "${task.title}"`, ['admin']))
+        // Mentor notified when their mentee updates a task
+        if (employee?.mentorId) {
+          newNotifs.push(makeNotif('task_status_changed', `Your mentee ${empName} ${statusVerb} task "${task.title}"`, ['mentor'], { mentorId: employee.mentorId }))
+        }
+        // HR notified when one of their tasks is completed
+        if (task.assignedBy === 'hr' && newStatus === 'done') {
+          newNotifs.push(makeNotif('task_status_changed', `${empName} completed your task "${task.title}"`, ['hr']))
+        }
+      }
       return {
         ...state,
-        tasks: state.tasks.map(t =>
-          t.id === action.payload.id ? { ...t, status: action.payload.status } : t
-        )
+        tasks: state.tasks.map(t => t.id === action.payload.id ? { ...t, status: action.payload.status } : t),
+        notifications: newNotifs,
       }
+    }
     case 'UPDATE_SUBTASK_STATUS':
       return {
         ...state,
@@ -411,14 +501,14 @@ function reducer(state: AppState, action: Action): AppState {
     }
     case 'REMOVE_EMPLOYEE': {
       const removedEmp = state.employees.find(e => e.id === action.payload.id)
-      const removeNotif: Notification = {
-        id: `notif-${Date.now()}`,
-        type: 'employee_removed',
-        message: removedEmp ? `${removedEmp.name} was removed from onboarding` : 'An employee was removed',
-        createdAt: new Date().toISOString(),
-        read: false,
+      const newNotifs: Notification[] = [...state.notifications]
+      const empName = removedEmp?.name ?? 'An employee'
+      // Admin + HR always notified
+      newNotifs.push(makeNotif('employee_removed', `${empName} was removed from onboarding`, ['admin', 'hr']))
+      // Mentor notified if the employee had an assigned mentor
+      if (removedEmp?.mentorId) {
+        newNotifs.push(makeNotif('employee_removed', `Your mentee ${empName} has been removed from onboarding`, ['mentor'], { mentorId: removedEmp.mentorId }))
       }
-      // Remove all conversations and messages involving the deleted employee
       const removedConvIds = state.conversations
         .filter(c => c.participants.includes(action.payload.id))
         .map(c => c.id)
@@ -426,7 +516,7 @@ function reducer(state: AppState, action: Action): AppState {
         ...state,
         employees:     state.employees.filter(e => e.id !== action.payload.id),
         tasks:         state.tasks.filter(t => t.assignedTo !== action.payload.id),
-        notifications: [...state.notifications, removeNotif],
+        notifications: newNotifs,
         conversations: state.conversations.filter(c => !removedConvIds.includes(c.id)),
         chatMessages:  state.chatMessages.filter(m => !removedConvIds.includes(m.conversationId)),
       }
@@ -447,23 +537,57 @@ function reducer(state: AppState, action: Action): AppState {
     case 'REMOVE_DOCUMENT':
       return { ...state, documents: state.documents.filter(d => d.id !== action.payload.id) }
     case 'MARK_NOTIFICATIONS_READ':
-      return { ...state, notifications: state.notifications.map(n => ({ ...n, read: true })) }
+      return {
+        ...state,
+        notifications: state.notifications.map(n => ({
+          ...n, read: true,
+          readBy: n.readBy.includes(USER_UUIDS.HR) ? n.readBy : [...n.readBy, USER_UUIDS.HR],
+        })),
+      }
     case 'MARK_MENTOR_NOTIFICATIONS_READ':
       return {
         ...state,
         notifications: state.notifications.map(n =>
-          n.mentorId === action.payload.mentorId ? { ...n, read: true } : n
+          n.mentorId === action.payload.mentorId
+            ? { ...n, read: true, readBy: n.readBy.includes(action.payload.mentorId) ? n.readBy : [...n.readBy, action.payload.mentorId] }
+            : n
         ),
       }
-    case 'ADD_TASK_FEEDBACK':
+    case 'MARK_NOTIFICATIONS_READ_FOR_USER': {
+      const { userId } = action.payload
+      return {
+        ...state,
+        notifications: state.notifications.map(n =>
+          n.readBy.includes(userId) ? n : { ...n, read: true, readBy: [...n.readBy, userId] }
+        ),
+      }
+    }
+    case 'ADD_TASK_FEEDBACK': {
+      const task = state.tasks.find(t => t.id === action.payload.taskId)
+      const fb   = action.payload.feedback
+      const newNotifs: Notification[] = [...state.notifications]
+      if (task) {
+        const employee = state.employees.find(e => e.id === task.assignedTo)
+        const empName  = employee?.name ?? 'employee'
+        // New hire notified when anyone (mentor/admin/hr) adds feedback on their task
+        if (fb.addedByRole !== 'employee') {
+          newNotifs.push(makeNotif('task_feedback_added', `${fb.addedBy} added feedback on your task "${task.title}"`, ['employee'], { employeeId: task.assignedTo }))
+        }
+        // Admin notified when mentor or hr adds feedback
+        if (fb.addedByRole !== 'admin') {
+          newNotifs.push(makeNotif('task_feedback_added', `${fb.addedBy} added feedback on "${task.title}" for ${empName}`, ['admin']))
+        }
+      }
       return {
         ...state,
         tasks: state.tasks.map(t =>
           t.id === action.payload.taskId
-            ? { ...t, feedback: [...(t.feedback ?? []), action.payload.feedback] }
+            ? { ...t, feedback: [...(t.feedback ?? []), fb] }
             : t
         ),
+        notifications: newNotifs,
       }
+    }
     case 'UPDATE_EMPLOYEE_BIO':
       return {
         ...state,

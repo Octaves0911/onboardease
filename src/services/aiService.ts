@@ -11,8 +11,8 @@ const TASK_AGENT_ID    = 'task_generator'    // dedicated task-generation agent
 // Uses AIML API with GPT-4o for intelligent, context-aware OnboardBot responses.
 const AIML_API_URL        = 'https://api.aimlapi.com'
 const AIML_API_KEY        = 'd0c5aca687c84490a2106daaa4af76a5'
-const AIML_MODEL          = 'gpt-4o'              // high-capability model for OnboardBot
-const AIML_SALES_MODEL    = 'gpt-4o'              // model for email simulation agent
+const AIML_MODEL          = 'openai/gpt-5-chat-latest'  // high-capability model for OnboardBot
+const AIML_SALES_MODEL    = 'openai/gpt-5-chat-latest'  // model for email simulation agent
 
 /**
  * Calls AIML API chat completions with proper system/user/assistant message format.

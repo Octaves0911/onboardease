@@ -17,6 +17,62 @@ import type { Employee, Document, MentorUser } from '../../context/AppContext'
 
 interface Props { activeSection?: string; isHR?: boolean }
 
+// ─── Settings Section (extracted to respect Rules of Hooks) ───────────────────
+function SettingsSection() {
+  const { state, dispatch } = useApp()
+  const cs = state.companySettings
+  const nameRef   = useRef<HTMLInputElement>(null)
+  const industRef = useRef<HTMLInputElement>(null)
+  const sizeRef   = useRef<HTMLInputElement>(null)
+  const aboutRef  = useRef<HTMLTextAreaElement>(null)
+  const [saved, setSaved] = useState(false)
+
+  const handleSave = () => {
+    dispatch({
+      type: 'UPDATE_COMPANY_SETTINGS',
+      payload: {
+        name:     nameRef.current?.value   ?? cs.name,
+        industry: industRef.current?.value ?? cs.industry,
+        teamSize: sizeRef.current?.value   ?? cs.teamSize,
+        about:    aboutRef.current?.value  ?? cs.about,
+      },
+    })
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2500)
+  }
+
+  return (
+    <div className="grid lg:grid-cols-2 gap-6">
+      {/* Company Settings */}
+      <div className="card">
+        <h3 className="font-bold text-brown-900 mb-5 flex items-center gap-2"><Settings size={18} />Company Settings</h3>
+        <div className="space-y-4">
+          <div><label className="block text-xs font-semibold text-brown-600 mb-1.5">Company Name</label><input ref={nameRef} type="text" defaultValue={cs.name} className="input-field text-sm py-2.5" /></div>
+          <div><label className="block text-xs font-semibold text-brown-600 mb-1.5">Industry</label><input ref={industRef} type="text" defaultValue={cs.industry} className="input-field text-sm py-2.5" /></div>
+          <div><label className="block text-xs font-semibold text-brown-600 mb-1.5">Team Size</label><input ref={sizeRef} type="text" defaultValue={cs.teamSize} className="input-field text-sm py-2.5" /></div>
+          <div>
+            <label className="block text-xs font-semibold text-brown-600 mb-1.5">About the Company</label>
+            <textarea ref={aboutRef} rows={4} defaultValue={cs.about} className="input-field text-sm py-2.5 resize-none w-full" placeholder="Write a short description about your company…" />
+          </div>
+        </div>
+        <button onClick={handleSave} className={`w-full mt-5 text-sm py-2.5 font-bold rounded-xl transition-colors ${saved ? 'bg-green-600 text-white' : 'btn-primary'}`}>
+          {saved ? '✓ Saved!' : 'Save Changes'}
+        </button>
+      </div>
+      {/* Security & Compliance */}
+      <div className="card">
+        <h3 className="font-bold text-brown-900 mb-5 flex items-center gap-2"><Shield size={18} />Security &amp; Compliance</h3>
+        <div className="space-y-4">
+          {[{ label: 'Authentication', value: 'SSO + MFA Enabled' }, { label: 'Data Encryption', value: 'AES-256' }, { label: 'Compliance', value: 'GDPR · CCPA · SOC 2' }].map(f => (
+            <div key={f.label}><label className="block text-xs font-semibold text-brown-600 mb-1.5">{f.label}</label><input type="text" defaultValue={f.value} className="input-field text-sm py-2.5" /></div>
+          ))}
+        </div>
+        <button className="btn-primary w-full mt-5 text-sm py-2.5">Save Changes</button>
+      </div>
+    </div>
+  )
+}
+
 export default function AdminPanel({ activeSection = 'overview', isHR = false }: Props) {
   const { state, dispatch } = useApp()
   const [search,           setSearch]           = useState('')
@@ -686,57 +742,7 @@ export default function AdminPanel({ activeSection = 'overview', isHR = false }:
         )}
 
         {/* ═══ SETTINGS ═══ */}
-        {activeSection === 'settings' && (() => {
-          const cs = state.companySettings
-          const nameRef   = useRef<HTMLInputElement>(null)
-          const industRef = useRef<HTMLInputElement>(null)
-          const sizeRef   = useRef<HTMLInputElement>(null)
-          const aboutRef  = useRef<HTMLTextAreaElement>(null)
-          const [saved, setSaved] = useState(false)
-          const handleSave = () => {
-            dispatch({
-              type: 'UPDATE_COMPANY_SETTINGS',
-              payload: {
-                name:     nameRef.current?.value   ?? cs.name,
-                industry: industRef.current?.value ?? cs.industry,
-                teamSize: sizeRef.current?.value   ?? cs.teamSize,
-                about:    aboutRef.current?.value  ?? cs.about,
-              },
-            })
-            setSaved(true)
-            setTimeout(() => setSaved(false), 2500)
-          }
-          return (
-            <div className="grid lg:grid-cols-2 gap-6">
-              {/* Company Settings */}
-              <div className="card">
-                <h3 className="font-bold text-brown-900 mb-5 flex items-center gap-2"><Settings size={18} />Company Settings</h3>
-                <div className="space-y-4">
-                  <div><label className="block text-xs font-semibold text-brown-600 mb-1.5">Company Name</label><input ref={nameRef} type="text" defaultValue={cs.name} className="input-field text-sm py-2.5" /></div>
-                  <div><label className="block text-xs font-semibold text-brown-600 mb-1.5">Industry</label><input ref={industRef} type="text" defaultValue={cs.industry} className="input-field text-sm py-2.5" /></div>
-                  <div><label className="block text-xs font-semibold text-brown-600 mb-1.5">Team Size</label><input ref={sizeRef} type="text" defaultValue={cs.teamSize} className="input-field text-sm py-2.5" /></div>
-                  <div>
-                    <label className="block text-xs font-semibold text-brown-600 mb-1.5">About the Company</label>
-                    <textarea ref={aboutRef} rows={4} defaultValue={cs.about} className="input-field text-sm py-2.5 resize-none w-full" placeholder="Write a short description about your company…" />
-                  </div>
-                </div>
-                <button onClick={handleSave} className={`w-full mt-5 text-sm py-2.5 font-bold rounded-xl transition-colors ${saved ? 'bg-green-600 text-white' : 'btn-primary'}`}>
-                  {saved ? '✓ Saved!' : 'Save Changes'}
-                </button>
-              </div>
-              {/* Security & Compliance */}
-              <div className="card">
-                <h3 className="font-bold text-brown-900 mb-5 flex items-center gap-2"><Shield size={18} />Security &amp; Compliance</h3>
-                <div className="space-y-4">
-                  {[{ label: 'Authentication', value: 'SSO + MFA Enabled' }, { label: 'Data Encryption', value: 'AES-256' }, { label: 'Compliance', value: 'GDPR · CCPA · SOC 2' }].map(f => (
-                    <div key={f.label}><label className="block text-xs font-semibold text-brown-600 mb-1.5">{f.label}</label><input type="text" defaultValue={f.value} className="input-field text-sm py-2.5" /></div>
-                  ))}
-                </div>
-                <button className="btn-primary w-full mt-5 text-sm py-2.5">Save Changes</button>
-              </div>
-            </div>
-          )
-        })()}
+        {activeSection === 'settings' && <SettingsSection />}
 
       </div>
 

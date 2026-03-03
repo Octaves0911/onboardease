@@ -319,7 +319,7 @@ function langFromName(name: string): string {
 
 // ─── Terminal config ──────────────────────────────────────────────────────────
 
-const PTY_WS_URL = 'wss://b9957ste.run.complete.dev/ws/pty'
+const PTY_WS_URL = 'wss://cxfj5mk6.run.complete.dev/ws/pty'
 
 // Safe JS sandbox using Function constructor
 function runJavaScript(code: string): string {
