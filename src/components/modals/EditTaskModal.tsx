@@ -11,6 +11,11 @@ interface Props {
 }
 
 const CATEGORIES = ['Setup', 'Learning', 'Technical', 'Compliance', 'People', 'Tools', 'Admin', 'General']
+const EST_TIMES = [
+  '15 min', '30 min', '45 min',
+  '1 hour', '1.5 hours', '2 hours', '3 hours', '4 hours',
+  'Half day', 'Full day', '2 days', '3 days', '1 week',
+]
 const PRIORITIES: { value: Task['priority']; label: string }[] = [
   { value: 'high',   label: 'High'   },
   { value: 'medium', label: 'Medium' },
@@ -189,7 +194,9 @@ export default function EditTaskModal({ task, uploaderId, onClose }: Props) {
             </div>
             <div>
               <label className="block text-xs font-semibold text-brown-600 mb-1.5">Est. Time</label>
-              <input type="text" value={estimatedTime} onChange={e => setEstimatedTime(e.target.value)} placeholder="30 min" className="input-field text-sm py-2.5" />
+              <select value={estimatedTime} onChange={e => setEstimatedTime(e.target.value)} className="input-field text-sm py-2.5">
+                {EST_TIMES.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
             </div>
             <div>
               <label className="block text-xs font-semibold text-brown-600 mb-1.5">Priority</label>

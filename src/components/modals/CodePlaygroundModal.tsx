@@ -10,19 +10,46 @@ import type { Task } from '../../context/AppContext'
 import { generateCodeAssistantReply } from '../../services/aiService'
 import type { CodeAssistantMessage } from '../../services/aiService'
 import MarkdownRenderer from '../common/MarkdownRenderer'
+import XTerminal, { type XTerminalHandle } from '../common/XTerminal'
 
 // ─── File node ────────────────────────────────────────────────────────────────
 
 interface FileNode {
   id: string
   name: string
-  language: string
-  content: string
+  type: 'file' | 'folder'
+  language: string        // '' for folders
+  content: string         // '' for folders
+  parentId: string | null // null = root
+  isOpen: boolean         // folder expanded state
+}
+
+// Normalize legacy FileNode arrays (add missing fields)
+function normalizeFiles(nodes: any[]): FileNode[] {
+  return nodes.map(n => ({
+    ...n,
+    type:     n.type     ?? 'file',
+    parentId: n.parentId ?? null,
+    isOpen:   n.isOpen   ?? false,
+  }))
+}
+
+// Compute slash-separated path from root for a file (used for workspace writes)
+function getFilePath(file: FileNode, all: FileNode[]): string {
+  const parts: string[] = [file.name]
+  let cur = file
+  while (cur.parentId) {
+    const parent = all.find(f => f.id === cur.parentId)
+    if (!parent) break
+    parts.unshift(parent.name)
+    cur = parent
+  }
+  return parts.join('/')
 }
 
 // ─── Pre-populate files based on task category/title ─────────────────────────
 
-function getInitialFiles(task: Task): FileNode[] {
+function getInitialFiles(task: Task): any[] {
   const cat   = (task.category   ?? '').toLowerCase()
   const title = (task.title      ?? '').toLowerCase()
   const desc  = (task.description ?? '')
@@ -118,6 +145,42 @@ ${(task.subtasks ?? []).map(s => `- [ ] ${s.title}`).join('\n') || '- [ ] Comple
 1.
 2.
 3.
+`,
+      },
+      {
+        id: '5', name: 'main.py', language: 'python',
+        content: `# ── ${task.title} — Python Sandbox ─────────────────────
+# Run with ▶ Run button. Executes remotely via Piston API.
+
+def greet(name: str) -> str:
+    return f"👋 Hello, {name}! Welcome to the Python sandbox."
+
+# Try it out
+print(greet("New Hire"))
+
+# ── Your practice code below ────────────────────────────
+# TODO: Experiment with Python concepts here!
+`,
+      },
+      {
+        id: '6', name: 'main.cpp', language: 'cpp',
+        content: `// ── ${task.title} — C++ Sandbox ──────────────────────────
+// Run with ▶ Run button. Compiled & executed remotely via Piston API.
+
+#include <iostream>
+#include <string>
+using namespace std;
+
+string greet(const string& name) {
+    return "Hello, " + name + "! Welcome to the C++ sandbox.";
+}
+
+int main() {
+    cout << greet("New Hire") << endl;
+
+    // TODO: Experiment with C++ concepts here!
+    return 0;
+}
 `,
       },
     ]
@@ -235,6 +298,8 @@ function getFileIcon(name: string) {
   if (ext === 'html')                      return <FileCode size={13} className="text-orange-400 flex-shrink-0" />
   if (ext === 'md')                        return <FileText size={13} className="text-green-400 flex-shrink-0" />
   if (ext === 'json')                      return <FileText size={13} className="text-amber-400 flex-shrink-0" />
+  if (ext === 'py')                        return <FileCode size={13} className="text-blue-300 flex-shrink-0" />
+  if (ext === 'cpp' || ext === 'c')        return <FileCode size={13} className="text-purple-400 flex-shrink-0" />
   return <File size={13} className="text-white/40 flex-shrink-0" />
 }
 
@@ -246,8 +311,15 @@ function langFromName(name: string): string {
   if (ext === 'html') return 'html'
   if (ext === 'md')   return 'markdown'
   if (ext === 'json') return 'json'
+  if (ext === 'py')   return 'python'
+  if (ext === 'cpp')  return 'cpp'
+  if (ext === 'c')    return 'c'
   return 'plaintext'
 }
+
+// ─── Terminal config ──────────────────────────────────────────────────────────
+
+const PTY_WS_URL = 'wss://cxfj5mk6.run.complete.dev/ws/pty'
 
 // Safe JS sandbox using Function constructor
 function runJavaScript(code: string): string {
@@ -317,15 +389,20 @@ export default function CodePlaygroundModal({ task, onClose, onMarkDone }: Props
 
   // ── Restore from saved state or start fresh ──────────────────────────────
   const savedState   = task.playgroundState
-  const initialFiles = savedState?.codeFiles?.length ? (savedState.codeFiles as FileNode[]) : getInitialFiles(task)
+  const initialFiles = normalizeFiles(
+    savedState?.codeFiles?.length ? (savedState.codeFiles as FileNode[]) : getInitialFiles(task)
+  )
 
-  const [files,       setFiles]       = useState<FileNode[]>(initialFiles)
-  const [activeId,    setActiveId]    = useState<string>(savedState?.codeActiveId ?? initialFiles[0]?.id ?? '')
-  const [output,      setOutput]      = useState<string>('')
-  const [showConsole, setShowConsole] = useState(false)
-  const [newFileName, setNewFileName] = useState('')
-  const [showNewFile, setShowNewFile] = useState(false)
-  const [running,     setRunning]     = useState(false)
+  const [files,         setFiles]         = useState<FileNode[]>(initialFiles)
+  const [activeId,      setActiveId]      = useState<string>(savedState?.codeActiveId ?? initialFiles[0]?.id ?? '')
+  const [showConsole,   setShowConsole]   = useState(false)
+  const [newFileName,   setNewFileName]   = useState('')
+  const [newItemType,   setNewItemType]   = useState<'file' | 'folder'>('file')
+  const [newItemParent, setNewItemParent] = useState<string | null>(null)
+  const [showNewFile,   setShowNewFile]   = useState(false)
+
+  // Ref to the xterm.js terminal handle (runCommand / syncFiles)
+  const xtermRef = useRef<XTerminalHandle>(null)
 
   // ── AI panel draggable width ──────────────────────────────────────────────
   const [aiPanelWidth,   setAiPanelWidth]   = useState(320)
@@ -417,17 +494,32 @@ export default function CodePlaygroundModal({ task, onClose, onMarkDone }: Props
   const addFile = () => {
     const name = newFileName.trim()
     if (!name) return
-    const newFile: FileNode = {
+    const isFolder = newItemType === 'folder'
+    const newNode: FileNode = {
       id:       Date.now().toString(),
       name,
-      language: langFromName(name),
-      content:  `// ${name}\n`,
+      type:     isFolder ? 'folder' : 'file',
+      language: isFolder ? '' : langFromName(name),
+      content:  isFolder ? '' : `// ${name}\n`,
+      parentId: newItemParent,
+      isOpen:   isFolder,
     }
-    setFiles(prev => [...prev, newFile])
-    setActiveId(newFile.id)
+    setFiles(prev => {
+      // If creating inside a folder, ensure that folder is open
+      if (newItemParent) {
+        return prev.map(f => f.id === newItemParent ? { ...f, isOpen: true } : f).concat(newNode)
+      }
+      return [...prev, newNode]
+    })
+    if (!isFolder) setActiveId(newNode.id)
     setNewFileName('')
     setShowNewFile(false)
+    setNewItemParent(null)
+    setNewItemType('file')
   }
+
+  const toggleFolder = (id: string) =>
+    setFiles(prev => prev.map(f => f.id === id ? { ...f, isOpen: !f.isOpen } : f))
 
   const deleteFile = (id: string) => {
     setFiles(prev => {
@@ -437,20 +529,33 @@ export default function CodePlaygroundModal({ task, onClose, onMarkDone }: Props
     })
   }
 
-  const runCode = async () => {
-    if (!activeFile) return
-    setRunning(true)
-    setShowConsole(true)
-    await new Promise(r => setTimeout(r, 150))
-    if (activeFile.language === 'javascript' || activeFile.language === 'typescript') {
-      setOutput(runJavaScript(activeFile.content))
-    } else {
-      setOutput(`ℹ️  Run is available for JavaScript/TypeScript files.\nCurrent file: ${activeFile.name} (${activeFile.language})\n\nTip: Create a .js file to execute code.`)
-    }
-    setRunning(false)
+  // Build the shell command to run the active file
+  const buildCommand = (file: FileNode): string | null => {
+    const lang = file.language
+    const path = getFilePath(file, files)
+    if (lang === 'javascript')  return `node ${path}`
+    if (lang === 'typescript')  return `npx ts-node ${path}`
+    if (lang === 'python')      return `python3 ${path}`
+    if (lang === 'cpp')         return `g++ -std=c++17 -o /tmp/playground_prog ${path} && /tmp/playground_prog`
+    if (lang === 'c')           return `gcc -o /tmp/playground_prog ${path} && /tmp/playground_prog`
+    return null
   }
 
-  const clearOutput = () => setOutput('')
+  const filePayload = () =>
+    files.filter(f => f.type === 'file').map(f => ({ path: getFilePath(f, files), content: f.content }))
+
+  const runCode = () => {
+    if (!activeFile || activeFile.type === 'folder') return
+    const cmd = buildCommand(activeFile)
+    setShowConsole(true)
+    if (!cmd) return
+    xtermRef.current?.runCommand(cmd, filePayload())
+  }
+
+  const clearTerminal = () => {
+    // Send Ctrl+L to bash to clear the screen
+    xtermRef.current?.runCommand('clear', filePayload())
+  }
 
   // ── Send message to AI assistant ──────────────────────────────────────────
   const sendAiMessage = async (text?: string) => {
@@ -511,11 +616,9 @@ export default function CodePlaygroundModal({ task, onClose, onMarkDone }: Props
           {/* Run */}
           <button
             onClick={runCode}
-            disabled={running}
-            className="flex items-center gap-1.5 text-xs font-bold bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg transition-colors"
+            className="flex items-center gap-1.5 text-xs font-bold bg-green-600 hover:bg-green-500 text-white px-3 py-1.5 rounded-lg transition-colors"
           >
-            {running ? <RefreshCw size={11} className="animate-spin" /> : <Play size={11} />}
-            {running ? 'Running…' : 'Run'}
+            <Play size={11} /> Run
           </button>
 
           {/* Console toggle */}
@@ -568,18 +671,23 @@ export default function CodePlaygroundModal({ task, onClose, onMarkDone }: Props
           <div className="flex items-center justify-between px-3 py-2.5 border-b border-white/10">
             <div className="flex items-center gap-1.5">
               <FolderOpen size={11} className="text-white/30" />
-              <span className="text-[10px] font-bold text-white/40 uppercase tracking-wider">Files</span>
+              <span className="text-[10px] font-bold text-white/40 uppercase tracking-wider">Explorer</span>
             </div>
-            <button
-              onClick={() => setShowNewFile(v => !v)}
-              className="p-1 rounded hover:bg-white/10 text-white/40 hover:text-white/80 transition-colors"
-              title="New file"
-            >
-              <Plus size={13} />
-            </button>
+            <div className="flex items-center gap-0.5">
+              <button
+                onClick={() => { setNewItemType('file'); setNewItemParent(null); setShowNewFile(v => !v) }}
+                className="p-1 rounded hover:bg-white/10 text-white/40 hover:text-white/80 transition-colors"
+                title="New file"
+              ><Plus size={13} /></button>
+              <button
+                onClick={() => { setNewItemType('folder'); setNewItemParent(null); setShowNewFile(v => !v) }}
+                className="p-1 rounded hover:bg-white/10 text-white/40 hover:text-yellow-400 transition-colors"
+                title="New folder"
+              ><FolderOpen size={12} /></button>
+            </div>
           </div>
 
-          {/* New file input */}
+          {/* New file/folder input */}
           {showNewFile && (
             <div className="px-2 pt-2 pb-1 border-b border-white/10">
               <input
@@ -588,41 +696,82 @@ export default function CodePlaygroundModal({ task, onClose, onMarkDone }: Props
                 onChange={e => setNewFileName(e.target.value)}
                 onKeyDown={e => {
                   if (e.key === 'Enter')  { addFile() }
-                  if (e.key === 'Escape') { setShowNewFile(false); setNewFileName('') }
+                  if (e.key === 'Escape') { setShowNewFile(false); setNewFileName(''); setNewItemParent(null) }
                 }}
-                placeholder="filename.js"
+                placeholder={newItemType === 'folder' ? 'folder-name' : 'filename.py'}
                 className="w-full bg-[#0f0f1a] text-white text-xs px-2 py-1.5 rounded border border-teal-500/50 focus:outline-none focus:border-teal-400 font-mono"
               />
-              <p className="text-[10px] text-white/25 mt-1 px-1">Enter to create · Esc to cancel</p>
+              <p className="text-[10px] text-white/25 mt-1 px-1">
+                {newItemType === 'folder' ? '📁 folder' : '📄 file'} · Enter to create · Esc to cancel
+              </p>
             </div>
           )}
 
-          {/* File list */}
+          {/* Recursive file tree */}
           <div className="flex-1 overflow-y-auto py-1">
-            {files.map(file => (
-              <div
-                key={file.id}
-                onClick={() => setActiveId(file.id)}
-                className={`flex items-center gap-1.5 pl-3 pr-2 py-1.5 cursor-pointer group transition-colors ${
-                  activeId === file.id
-                    ? 'bg-teal-500/20 text-white border-l-2 border-l-teal-400'
-                    : 'text-white/55 hover:bg-white/5 hover:text-white/80 border-l-2 border-l-transparent'
-                }`}
-              >
-                <ChevronRight size={9} className="text-white/15 flex-shrink-0" />
-                {getFileIcon(file.name)}
-                <span className="flex-1 text-xs font-mono truncate">{file.name}</span>
-                {files.length > 1 && (
-                  <button
-                    onClick={e => { e.stopPropagation(); deleteFile(file.id) }}
-                    className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-red-500/30 text-white/30 hover:text-red-400 transition-all flex-shrink-0"
-                    title="Delete file"
-                  >
-                    <Trash2 size={10} />
-                  </button>
-                )}
-              </div>
-            ))}
+            {(() => {
+              const renderTree = (parentId: string | null, depth: number): React.ReactNode => {
+                const children = files
+                  .filter(n => n.parentId === parentId)
+                  .sort((a, b) => {
+                    if (a.type !== b.type) return a.type === 'folder' ? -1 : 1
+                    return a.name.localeCompare(b.name)
+                  })
+                return children.map(node => {
+                  const isActive = activeId === node.id
+                  const indent = depth * 10 + 12
+                  if (node.type === 'folder') {
+                    return (
+                      <div key={node.id}>
+                        <div
+                          onClick={() => toggleFolder(node.id)}
+                          style={{ paddingLeft: indent }}
+                          className="flex items-center gap-1.5 pr-2 py-1.5 cursor-pointer group text-white/55 hover:bg-white/5 hover:text-white/80 transition-colors"
+                        >
+                          <ChevronRight size={9} className={`text-white/25 flex-shrink-0 transition-transform ${node.isOpen ? 'rotate-90' : ''}`} />
+                          <FolderOpen size={13} className="text-yellow-400/80 flex-shrink-0" />
+                          <span className="flex-1 text-xs font-mono truncate">{node.name}</span>
+                          <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5">
+                            <button
+                              onClick={e => { e.stopPropagation(); setNewItemType('file'); setNewItemParent(node.id); setShowNewFile(true) }}
+                              className="p-0.5 rounded hover:bg-white/10 text-white/30 hover:text-white/70"
+                              title="New file inside"
+                            ><Plus size={9} /></button>
+                            <button
+                              onClick={e => { e.stopPropagation(); deleteFile(node.id) }}
+                              className="p-0.5 rounded hover:bg-red-500/30 text-white/30 hover:text-red-400"
+                              title="Delete folder"
+                            ><Trash2 size={9} /></button>
+                          </div>
+                        </div>
+                        {node.isOpen && renderTree(node.id, depth + 1)}
+                      </div>
+                    )
+                  }
+                  return (
+                    <div
+                      key={node.id}
+                      onClick={() => setActiveId(node.id)}
+                      style={{ paddingLeft: indent }}
+                      className={`flex items-center gap-1.5 pr-2 py-1.5 cursor-pointer group transition-colors ${
+                        isActive
+                          ? 'bg-teal-500/20 text-white border-l-2 border-l-teal-400'
+                          : 'text-white/55 hover:bg-white/5 hover:text-white/80 border-l-2 border-l-transparent'
+                      }`}
+                    >
+                      {getFileIcon(node.name)}
+                      <span className="flex-1 text-xs font-mono truncate">{node.name}</span>
+                      <button
+                        onClick={e => { e.stopPropagation(); deleteFile(node.id) }}
+                        className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-red-500/30 text-white/30 hover:text-red-400 transition-all flex-shrink-0"
+                        title="Delete file"
+                      ><Trash2 size={10} /></button>
+                    </div>
+                  )
+                })
+              }
+              return renderTree(null, 0)
+            })()}
           </div>
 
           {/* Task subtasks panel */}
@@ -644,9 +793,9 @@ export default function CodePlaygroundModal({ task, onClose, onMarkDone }: Props
         {/* ── Editor + console (center) ────────────────────────────────────── */}
         <div className="flex-1 flex flex-col min-w-0">
 
-          {/* Tab bar */}
+          {/* Tab bar — only files, not folders */}
           <div className="flex items-center bg-[#12121f] border-b border-white/10 overflow-x-auto flex-shrink-0 scrollbar-none">
-            {files.map(file => (
+            {files.filter(f => f.type === 'file').map(file => (
               <button
                 key={file.id}
                 onClick={() => setActiveId(file.id)}
@@ -700,29 +849,32 @@ export default function CodePlaygroundModal({ task, onClose, onMarkDone }: Props
             )}
           </div>
 
-          {/* Console output */}
+          {/* xterm.js Terminal */}
           {showConsole && (
-            <div className="h-40 bg-[#0f0f1a] border-t border-white/10 flex flex-col flex-shrink-0">
-              <div className="flex items-center justify-between px-3 py-1.5 border-b border-white/10 flex-shrink-0">
-                <div className="flex items-center gap-1.5">
-                  <Terminal size={10} className="text-white/30" />
-                  <span className="text-[10px] font-bold text-white/35 uppercase tracking-wider">Console Output</span>
+            <div className="h-64 bg-[#0c0c14] border-t border-white/10 flex flex-col flex-shrink-0">
+              {/* Title bar */}
+              <div className="flex items-center justify-between px-3 py-1 border-b border-white/8 bg-[#111120] flex-shrink-0">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-red-500/70 cursor-pointer" onClick={() => setShowConsole(false)} />
+                  <span className="w-2.5 h-2.5 rounded-full bg-yellow-500/70" />
+                  <span className="w-2.5 h-2.5 rounded-full bg-green-500/70" />
+                  <div className="flex items-center gap-1.5 ml-2">
+                    <Terminal size={10} className="text-white/30" />
+                    <span className="text-[10px] font-semibold text-white/25 tracking-wide">bash — playground</span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <button onClick={clearOutput} className="text-[10px] text-white/25 hover:text-white/50 transition-colors">Clear</button>
-                  <button onClick={() => setShowConsole(false)} className="text-white/25 hover:text-white/50 transition-colors">
-                    <X size={11} />
-                  </button>
+                <div className="flex items-center gap-2">
+                  <button onClick={clearTerminal} className="text-[10px] text-white/20 hover:text-white/50 font-mono transition-colors">clear</button>
+                  <button onClick={() => setShowConsole(false)} className="text-white/20 hover:text-white/50 transition-colors"><X size={11} /></button>
                 </div>
               </div>
-              <div className="flex-1 overflow-y-auto px-3 py-2.5">
-                {output ? (
-                  <pre className="text-xs font-mono text-green-400 whitespace-pre-wrap leading-relaxed">{output}</pre>
-                ) : (
-                  <p className="text-xs text-white/20 font-mono italic">
-                    {running ? 'Running…' : 'Click ▶ Run to execute your JavaScript file'}
-                  </p>
-                )}
+              {/* xterm.js fills the rest */}
+              <div className="flex-1 min-h-0 overflow-hidden">
+                <XTerminal
+                  ref={xtermRef}
+                  wsUrl={PTY_WS_URL}
+                  initFiles={filePayload()}
+                />
               </div>
             </div>
           )}

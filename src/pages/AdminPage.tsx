@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useParams, Navigate } from 'react-router-dom'
 import {
   LayoutDashboard, Users, FileText,
   BarChart3, Settings, ChevronLeft, ChevronRight, GraduationCap, MessageSquare
@@ -9,6 +10,7 @@ import ChatTab, { useChatUnread } from '../components/chat/ChatTab'
 import ProfileModal from '../components/modals/ProfileModal'
 import Logo from '../components/common/Logo'
 import OnboardBotWidget from '../components/chat/OnboardBotWidget'
+import { useApp, USER_UUIDS } from '../context/AppContext'
 
 const NAV_ITEMS = [
   { icon: <LayoutDashboard size={20} />, label: 'Overview',  id: 'overview'  },
@@ -59,9 +61,21 @@ function AdminNav({ collapsed, active, setActive }: { collapsed: boolean; active
 }
 
 export default function AdminPage() {
+  const { adminId }                   = useParams<{ adminId: string }>()
+  const { dispatch }                  = useApp()
   const [collapsed,   setCollapsed]   = useState(false)
   const [active,      setActive]      = useState('overview')
   const [showProfile, setShowProfile] = useState(false)
+
+  // Restore role from URL on mount/reload
+  useEffect(() => {
+    if (adminId) {
+      dispatch({ type: 'SET_ROLE', payload: { role: 'admin', userId: adminId } })
+    }
+  }, [adminId, dispatch])
+
+  // Guard: only the known admin UUID is valid
+  if (adminId !== USER_UUIDS.ADMIN) return <Navigate to="/login" replace />
 
   return (
     <div className="flex min-h-screen" style={{ background: '#F0F7FF' }}>

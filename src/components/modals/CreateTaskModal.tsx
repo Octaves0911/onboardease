@@ -9,7 +9,7 @@ import type { Employee, Task, SubTask, SupportingLink, Document } from '../../co
 import type { SuggestedTask } from '../../services/aiService'
 
 // ─── Backend agent URL ────────────────────────────────────────────────────────
-const AGENT_API_URL = 'https://b9957ste.run.complete.dev'
+const AGENT_API_URL = ''
 
 // ─── Local types ──────────────────────────────────────────────────────────────
 interface TaskChatMessage {

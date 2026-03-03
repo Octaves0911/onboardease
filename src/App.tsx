@@ -16,13 +16,15 @@ function App() {
           <Route path="/"                    element={<LandingPage />} />
           <Route path="/login"               element={<LoginPage />} />
           <Route path="/setup"               element={<SetupPage />} />
-          <Route path="/new-hire"            element={<NewHirePage />} />
-          {/* Parameterised route — mentorId in URL survives reloads */}
-          <Route path="/mentor/:mentorId"    element={<MentorPage />} />
-          {/* Old bare /mentor redirects to login so users pick a mentor */}
-          <Route path="/mentor"              element={<Navigate to="/login" replace />} />
-          <Route path="/admin"               element={<AdminPage />} />
-          <Route path="/hr"                  element={<HRPage />} />
+          {/* UUID-based routes — every user identity is embedded in the URL */}
+          <Route path="/new-hire/:employeeId" element={<NewHirePage />} />
+          <Route path="/new-hire"             element={<Navigate to="/login" replace />} />
+          <Route path="/mentor/:mentorId"     element={<MentorPage />} />
+          <Route path="/mentor"               element={<Navigate to="/login" replace />} />
+          <Route path="/admin/:adminId"       element={<AdminPage />} />
+          <Route path="/admin"                element={<Navigate to="/login" replace />} />
+          <Route path="/hr/:hrId"             element={<HRPage />} />
+          <Route path="/hr"                   element={<Navigate to="/login" replace />} />
         </Routes>
       </Router>
     </AppProvider>

@@ -63,28 +63,53 @@ export default function Navbar({ variant = 'landing', title, onProfileClick }: N
 
           <div className="flex items-center gap-2">
 
-            {/* Notifications — HR sees global events; Mentor sees mentee-assignment events */}
+            {/* Notifications — role-aware: Admin sees all, HR sees people+tasks, Mentor sees mentee events, New Hire sees their tasks */}
             {(() => {
-              const isHR     = state.currentRole === 'hr'
-              const isMentor = state.currentRole === 'mentor'
-              const mentorId = state.currentUserId
+              const role     = state.currentRole
+              const userId   = state.currentUserId ?? ''
+              const isAdmin    = role === 'admin'
+              const isHR       = role === 'hr'
+              const isMentor   = role === 'mentor'
+              const isEmployee = role === 'employee'
 
-              // HR: all notifications without a mentorId scope
-              // Mentor: only notifications scoped to their mentorId
-              const visibleNotifs = isHR
-                ? state.notifications.filter(n => !n.mentorId)
-                : isMentor
-                  ? state.notifications.filter(n => n.mentorId === mentorId)
-                  : []
+              // Filter by targetRoles + optional id scoping
+              const visibleNotifs = isAdmin
+                ? state.notifications.filter(n => (n.targetRoles ?? []).includes('admin'))
+                : isHR
+                  ? state.notifications.filter(n => (n.targetRoles ?? []).includes('hr'))
+                  : isMentor
+                    ? state.notifications.filter(n =>
+                        (n.targetRoles ?? []).includes('mentor') &&
+                        (!n.mentorId || n.mentorId === userId)
+                      )
+                    : isEmployee
+                      ? state.notifications.filter(n =>
+                          (n.targetRoles ?? []).includes('employee') &&
+                          (!n.employeeId || n.employeeId === userId)
+                        )
+                      : []
 
-              const unread = visibleNotifs.filter(n => !n.read).length
+              const unread = visibleNotifs.filter(n => !(n.readBy ?? []).includes(userId)).length
 
               const handleOpen = () => {
                 setNotifOpen(!notifOpen)
                 setProfileOpen(false)
                 if (!notifOpen && unread > 0) {
-                  if (isHR)     dispatch({ type: 'MARK_NOTIFICATIONS_READ' })
-                  if (isMentor && mentorId) dispatch({ type: 'MARK_MENTOR_NOTIFICATIONS_READ', payload: { mentorId } })
+                  dispatch({ type: 'MARK_NOTIFICATIONS_READ_FOR_USER', payload: { userId } })
+                }
+              }
+
+              // Icon & colour config per notification type
+              const getIconInfo = (type: string) => {
+                switch (type) {
+                  case 'employee_added':      return { bg: 'bg-green-100',  fg: 'text-green-700',  icon: '👤' }
+                  case 'employee_removed':    return { bg: 'bg-red-100',    fg: 'text-red-600',    icon: '🗑' }
+                  case 'mentor_assigned':     return { bg: 'bg-purple-100', fg: 'text-purple-700', icon: '🤝' }
+                  case 'task_assigned':       return { bg: 'bg-blue-100',   fg: 'text-blue-700',   icon: '📋' }
+                  case 'task_created':        return { bg: 'bg-indigo-100', fg: 'text-indigo-700', icon: '✏️' }
+                  case 'task_status_changed': return { bg: 'bg-teal-100',   fg: 'text-teal-700',   icon: '✅' }
+                  case 'task_feedback_added': return { bg: 'bg-amber-100',  fg: 'text-amber-700',  icon: '💬' }
+                  default:                    return { bg: 'bg-blue-100',   fg: 'text-blue-700',   icon: '📋' }
                 }
               }
 
@@ -115,21 +140,22 @@ export default function Navbar({ variant = 'landing', title, onProfileClick }: N
                         </div>
                       ) : (
                         <div className="max-h-72 overflow-y-auto divide-y divide-brown-50">
-                          {[...visibleNotifs].reverse().map(n => (
-                            <div key={n.id} className={`px-4 py-3 flex items-start gap-3 ${n.read ? 'opacity-60' : ''}`}>
-                              <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-sm
-                                ${n.type === 'employee_added' ? 'bg-green-100 text-green-700' :
-                                  n.type === 'employee_removed' ? 'bg-red-100 text-red-600' :
-                                  'bg-blue-100 text-blue-700'}`}>
-                                {n.type === 'employee_added' ? '👤' : n.type === 'employee_removed' ? '🗑' : '📋'}
+                          {[...visibleNotifs].reverse().map(n => {
+                            const isRead   = (n.readBy ?? []).includes(userId)
+                            const iconInfo = getIconInfo(n.type)
+                            return (
+                              <div key={n.id} className={`px-4 py-3 flex items-start gap-3 ${isRead ? 'opacity-60' : ''}`}>
+                                <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-sm ${iconInfo.bg} ${iconInfo.fg}`}>
+                                  {iconInfo.icon}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs font-semibold text-brown-800">{n.message}</p>
+                                  <p className="text-xs text-brown-400 mt-0.5">{new Date(n.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                                </div>
+                                {!isRead && <span className="w-2 h-2 bg-red-500 rounded-full flex-shrink-0 mt-1.5" />}
                               </div>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-xs font-semibold text-brown-800">{n.message}</p>
-                                <p className="text-xs text-brown-400 mt-0.5">{new Date(n.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
-                              </div>
-                              {!n.read && <span className="w-2 h-2 bg-red-500 rounded-full flex-shrink-0 mt-1.5" />}
-                            </div>
-                          ))}
+                            )
+                          })}
                         </div>
                       )}
                     </div>
@@ -201,7 +227,6 @@ export default function Navbar({ variant = 'landing', title, onProfileClick }: N
             <Link to="/login" className="text-brown-600 hover:text-brown-900 font-medium text-sm px-4 py-2 rounded-lg hover:bg-brown-100 transition-colors">
               Sign In
             </Link>
-            <Link to="/setup" className="btn-primary text-sm py-2.5 px-5">Get Started Free</Link>
           </div>
 
           <button onClick={() => setMobileOpen(!mobileOpen)} className="md:hidden p-2 rounded-lg hover:bg-brown-100 text-brown-700 transition-colors">
@@ -219,7 +244,6 @@ export default function Navbar({ variant = 'landing', title, onProfileClick }: N
           ))}
           <div className="pt-2 flex flex-col gap-2">
             <Link to="/login" className="btn-secondary text-center">Sign In</Link>
-            <Link to="/setup" className="btn-primary text-center">Get Started Free</Link>
           </div>
         </div>
       )}

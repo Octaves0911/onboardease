@@ -31,12 +31,6 @@ export default function LandingPage() {
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Link
-                to="/setup"
-                className="bg-white text-brown-900 font-bold px-8 py-4 rounded-xl hover:bg-brown-50 transition-colors inline-flex items-center gap-2 justify-center"
-              >
-                Start Free Trial — No Credit Card <ArrowRight size={18} />
-              </Link>
-              <Link
                 to="/admin"
                 className="border border-white/30 text-white font-semibold px-8 py-4 rounded-xl hover:bg-white/10 transition-colors inline-flex items-center gap-2 justify-center"
               >

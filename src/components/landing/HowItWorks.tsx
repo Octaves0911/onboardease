@@ -85,13 +85,6 @@ export default function HowItWorks() {
           ))}
         </div>
 
-        {/* CTA */}
-        <div className="mt-12 text-center">
-          <Link to="/setup" className="btn-primary inline-flex items-center gap-2 text-lg px-8 py-4">
-            Start Your Free Trial <ArrowRight size={20} />
-          </Link>
-          <p className="text-brown-500 text-sm mt-3">No credit card required · Setup in 15 minutes</p>
-        </div>
       </div>
     </section>
   )
